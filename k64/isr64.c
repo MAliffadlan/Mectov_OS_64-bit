@@ -93,6 +93,14 @@ u64 isr64_handler(regs64_t *r) {
                     return task64_kill_fault(r, "RO-KILL");
             }
         }
+        /* Park on the immortal boot tables BEFORE diagnosing: the faulting
+         * CR3 may itself be garbage (freed/reused PML4), in which case code
+         * fetches, BSS reads and LAPIC MMIO all fault nestedly and the
+         * machine triple-resets with zero forensics. Boot maps all of
+         * kernel/BSS/MMIO/PMM. Report the saved fault_cr3, halt after. */
+        u64 fault_cr3 = cpu_read_cr3() & ~0xFFFULL;
+        extern u64 pml4_boot[];
+        if (fault_cr3 != (u64)pml4_boot) cpu_load_cr3((u64)pml4_boot);
         /* Freeze the machine first (NMI ignores IF): a concurrent cascade
          * on another CPU would otherwise reset us mid-dump. Then report
          * with lock-free output (a halted CPU may own serial_lock). */
@@ -104,7 +112,7 @@ u64 isr64_handler(regs64_t *r) {
         s_raws(" rip=");
         s_rawx(r->rip);
         s_raws(" cr3=");
-        s_rawx(cpu_read_cr3() & ~0xFFFULL);
+        s_rawx(fault_cr3);
         s_raws(" rsp=");
         s_rawx(r->rsp);
         s_raws(" cpu~");
@@ -117,6 +125,9 @@ u64 isr64_handler(regs64_t *r) {
         for (;;) __asm__ __volatile__("cli; hlt");
     }
     if (v < 32) {
+        u64 fault_cr3 = cpu_read_cr3() & ~0xFFFULL;
+        extern u64 pml4_boot[];
+        if (fault_cr3 != (u64)pml4_boot) cpu_load_cr3((u64)pml4_boot);
         smp_halt_others();
         s_raws("[K64] FATAL EXC vec=");
         s_rawu(v);
