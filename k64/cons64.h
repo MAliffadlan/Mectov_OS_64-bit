@@ -29,6 +29,7 @@ void cons_present(void);
 void cons_status_tick(u32 t);
 void cons_graphics(int on); /* G2: 1 = mapper owns screen (present skips),
  * 0 = restore text (marks all dirty; caller presents). Serial-lock. */
+void cons_mark_dirty(u32 y0, u32 y1); /* D1: window slots dirty screen rows. */
 void cons_cursor_moved(u32 ox, u32 oy, u32 nx, u32 ny); /* G1: dirty old+new
  * cursor bands (lock-free stores); the sprite itself is composited in
  * cons_present and never lives in the backbuffer. */

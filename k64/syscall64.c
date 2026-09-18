@@ -5,6 +5,7 @@
  * EXIT/PID/CLONE) to keep the future libc mapping 1:1.
  */
 #include "cpu64.h"
+#include "cons64.h"
 
 #define EFAULT 14
 #define ENOSYS 38
@@ -20,6 +21,7 @@ static u64 sys_print(u64 ptr, u64 len) {
 u64 syscall64_dispatch(regs64_t *r) {
     u32 n = (u32)r->rax;
     u64 a = r->rbx, b = r->rcx, c = r->rdx;
+    u64 d = r->rsi, e = r->rdi, f = r->r8, g = r->r9; /* D1: wide syscalls */
     u64 ret = (u64)(long)-ENOSYS;
     switch (n) {
     case SYS64_PRINT:
@@ -95,6 +97,42 @@ u64 syscall64_dispatch(regs64_t *r) {
     case SYS64_FB_UNMAP:
         ret = (u64)(long)fb_unmap_current();
         break;
+    case SYS64_WIN_CREATE: {
+        /* Title: fixed 16B kernel copy (may lack NUL; win caps it). */
+        char kt[16];
+        int i;
+        if (!vmm_user_ok(c, 16)) { ret = (u64)(long)-14; break; }
+        for (i = 0; i < 16; i++) kt[i] = ((volatile const char *)c)[i];
+        ret = (u64)(long)win_create((u32)a, (u32)b, kt);
+        break;
+    }
+    case SYS64_WIN_CLOSE:
+        ret = (u64)(long)win_close((int)a);
+        break;
+    case SYS64_WIN_FILL:
+        ret = (u64)(long)win_fill((int)a, (u32)b, (u32)c, (u32)d, (u32)e,
+                                  (u32)f);
+        break;
+    case SYS64_WIN_TEXT: {
+        if (!e) { ret = 0; break; }
+        if (e > 256 || !vmm_user_ok(d, e)) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)(long)win_text((int)a, (u32)b, (u32)c, (const char *)d,
+                                  e, (u32)f, (u32)g);
+        break;
+    }
+    case SYS64_WIN_SETPOS:
+        ret = (u64)(long)win_setpos((int)a, (u32)b, (u32)c);
+        break;
+    case SYS64_WIN_PRESENT: {
+        u64 f = s_lock_hold();
+        cons_present();
+        s_lock_drop(f);
+        ret = 0;
+        break;
+    }
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

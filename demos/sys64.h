@@ -33,6 +33,46 @@ static inline long sys3(long n, u64 a, u64 b, u64 c) {
                          : "memory");
     return r;
 }
+/* D1 wide calls: RSI/RDI/R8/R9 via register variables (kernel ABI0
+ * passes args in RBX,RCX,RDX,RSI,RDI,R8,R9; all but RAX preserved). */
+static inline long sys4(long n, u64 a, u64 b, u64 c, u64 d) {
+    long r;
+    __asm__ __volatile__("int $0x80"
+                         : "=a"(r)
+                         : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d)
+                         : "memory");
+    return r;
+}
+static inline long sys5(long n, u64 a, u64 b, u64 c, u64 d, u64 e) {
+    long r;
+    __asm__ __volatile__("int $0x80"
+                         : "=a"(r)
+                         : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e)
+                         : "memory");
+    return r;
+}
+static inline long sys6(long n, u64 a, u64 b, u64 c, u64 d, u64 e, u64 f) {
+    register u64 r8 __asm__("r8") = f;
+    long r;
+    __asm__ __volatile__("int $0x80"
+                         : "=a"(r)
+                         : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e),
+                           "r"(r8)
+                         : "memory");
+    return r;
+}
+static inline long sys7(long n, u64 a, u64 b, u64 c, u64 d, u64 e, u64 f,
+                        u64 g) {
+    register u64 r8 __asm__("r8") = f;
+    register u64 r9 __asm__("r9") = g;
+    long r;
+    __asm__ __volatile__("int $0x80"
+                         : "=a"(r)
+                         : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e),
+                           "r"(r8), "r"(r9)
+                         : "memory");
+    return r;
+}
 
 static unsigned d_strlen(const char *s) __attribute__((unused));
 static unsigned d_strlen(const char *s) {
@@ -102,6 +142,22 @@ typedef struct {
 static inline long d_fbinfo(fbinfo_t *f) { return sys1(138, (u64)f); }
 static inline long d_fbmap(void) { return sys0(139); }
 static inline long d_fbunmap(void) { return sys0(140); }
+/* D1 window slots (mirror k64/cpu64.h numbers). */
+static inline long d_wincreate(u64 w, u64 h, const char *t) {
+    return sys3(141, w, h, (u64)t);
+}
+static inline long d_winclose(long id) { return sys1(142, (u64)id); }
+static inline long d_winfill(long id, u64 x, u64 y, u64 w, u64 h, u64 rgb) {
+    return sys6(143, (u64)id, x, y, w, h, rgb);
+}
+static inline long d_wintext(long id, u64 x, u64 y, const char *s, u64 len,
+                             u64 fg, u64 bg) {
+    return sys7(144, (u64)id, x, y, (u64)s, len, fg, bg);
+}
+static inline long d_winsetpos(long id, u64 x, u64 y) {
+    return sys3(145, (u64)id, x, y);
+}
+static inline long d_winpresent(void) { return sys0(146); }
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

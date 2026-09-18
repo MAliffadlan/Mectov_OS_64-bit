@@ -349,6 +349,21 @@ void kernel64_main(u64 magic, u64 mb_info) {
                 flag_noap = 1;
         }
     }
+    /* "gui" boots straight to the desktop (winsrv as the interactive
+     * task); anything else (empty/"text") boots to the text shell.
+     * Token match (so "nogui" does NOT count). */
+    int flag_gui = 0;
+    if (cmdline && cmdline < (const char *)(end)) {
+        for (u64 i = 0; i < 256; i++) {
+            const char *c = cmdline + i;
+            if ((u64)(c + 3) >= end) break;
+            if (*c == '\0') break;
+            if (c[0] == 'g' && c[1] == 'u' && c[2] == 'i' &&
+                (c[3] == '\0' || c[3] == ' ') &&
+                (i == 0 || cmdline[i - 1] == ' '))
+                flag_gui = 1;
+        }
+    }
     s_puts("[K64] BOOTED KERNEL64 LOOP\n");
 
     /* --- M3: full physical memory + paging (needs mb_info for memmap) --- */
@@ -422,7 +437,18 @@ void kernel64_main(u64 magic, u64 mb_info) {
     int dc = task64_spawn_image("clone");
     int dfk = task64_spawn_image("forkdemo");
     int de = task64_spawn_image("execdemo");
-    int dsh = task64_spawn_image("shell");
+    /* Interactive task: desktop (winsrv, bootmode arg) on "gui",
+     * text shell otherwise. */
+    int dsh;
+    if (flag_gui) {
+        static char w0[] = "winsrv";
+        static char w1[] = "boot";
+        static char *wargv[2] = { w0, w1 };
+        s_puts("[K64] boot target: desktop (winsrv)\n");
+        dsh = task64_spawn_args("winsrv", 2, wargv);
+    } else {
+        dsh = task64_spawn_image("shell");
+    }
     int dst = task64_spawn_image("shelltest");
     int dbr = task64_spawn_image("brkdemo");
     int dnx = task64_spawn_image("nxtest");

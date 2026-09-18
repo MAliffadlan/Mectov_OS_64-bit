@@ -95,6 +95,12 @@ u64 k64_ticks(void);
 #define SYS64_FB_INFO 138  /* G2: RBX=ptr{fbinfo_t} -> 0/-errno */
 #define SYS64_FB_MAP 139   /* G2: map display to caller -> va/-errno */
 #define SYS64_FB_UNMAP 140 /* G2: release display map -> 0/-errno */
+#define SYS64_WIN_CREATE 141 /* D1: RBX=w RCX=h RDX=title[16] -> id/-errno */
+#define SYS64_WIN_CLOSE 142  /* D1: RBX=id -> 0/-errno */
+#define SYS64_WIN_FILL 143   /* D1: RBX=id RCX=x RDX=y RSI=w RDI=h R8=rgb */
+#define SYS64_WIN_TEXT 144   /* D1: RBX=id RCX=x RDX=y RSI=ptr RDI=len R8=fg R9=bg */
+#define SYS64_WIN_SETPOS 145 /* D1: RBX=id RCX=x RDX=y -> 0/-errno */
+#define SYS64_WIN_PRESENT 146 /* D1: flush dirty bands -> 0 */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -187,6 +193,14 @@ long fb_info(fbinfo_t *out);
 long fb_map_current(void);
 long fb_unmap_current(void);
 void fb_owner_release(task64_t *t);
+/* D1 window slots (k64/win64.c): kernel-composited, owner-checked. */
+long win_create(u32 w, u32 h, const char *title);
+long win_close(int id);
+long win_fill(int id, u32 x, u32 y, u32 w, u32 h, u32 rgb);
+long win_text(int id, u32 x, u32 y, const char *s, u64 len, u32 fg, u32 bg);
+long win_setpos(int id, u32 x, u32 y);
+void win_owner_release(task64_t *t);
+void win_composite_scanline(u32 y, u32 *drow, u32 fb_w);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

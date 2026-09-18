@@ -170,8 +170,9 @@ u64 __pmm_alloc(void) {
         pmm_bits[i] |= (u64)1 << b;
         pmm_free_n--;
         frame_ref[f] = 1;
-        /* Zero via the identity map (safe: every PMM frame is identity
-         * mapped once mem64_init completes; init-time allocs are <8MB). */
+        /* Zero via the identity map (safe: boot maps 0-1GB and the full
+         * map covers everything by the time tasks allocate; init-time
+         * allocs come from below 1GB). */
         volatile u64 *p = (volatile u64 *)(f * PAGE4K);
         for (int k = 0; k < 512; k++) p[k] = 0;
         return f * PAGE4K;
@@ -808,6 +809,9 @@ void mem64_init(u64 mb_info) {
                                   : (u64 *)(pdpt_low[pdpt_idx] & PTE_ADDR);
         pd[pd_idx] = (pa & ~(PAGE2M - 1)) | PTE_P | PTE_RW | PTE_PS;
     }
+    /* D1: boot mapped 0-1GB wholesale; clear pd_low past RAM so no stale
+     * executable aliases linger above top2m (other PDs are fresh frames). */
+    for (u64 i = top2m >> 21; i < 512; i++) pd_low[i] = 0;
 
     /* Pass 5: framebuffer as UC|NX 2MB pages (never executable data). */
     if (g_fbsize) {

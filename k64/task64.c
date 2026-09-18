@@ -395,6 +395,7 @@ u64 task64_exec(const char *uname, regs64_t *r) {
     self->cr3 = fresh;
     vmm_teardown_space(old);
     fb_owner_release(self); /* G2: old space (and its map) is gone */
+    win_owner_release(self); /* D1: windows die with the old space */
     self->user_base = base;
     self->heap_base = self->heap_brk = (img_end + 4095) & ~4095ULL;
     u64 sf = SCHED_LOCK();
@@ -455,6 +456,7 @@ void task64_exit(int status) {
         for (;;) __asm__ __volatile__("cli; hlt");
     }
     fb_owner_release(self); /* G2: yield the screen before going zombie */
+    win_owner_release(self); /* D1: close owned window slots */
     s_printf("[K64] task %u (%s) exited status=%u\n", (u64)self->id,
              self->name, (u64)(long)status);
     u64 f = SCHED_LOCK();

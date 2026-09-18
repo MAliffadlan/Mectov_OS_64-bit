@@ -87,7 +87,7 @@ _start:
     test edx, (1 << 29)
     jz .no_longmode
 
-    ; --- build minimal paging: PML4[0]->PDPT, PDPT[0]->PD, PD[0..3]=2MB id ---
+    ; --- build minimal paging: PML4[0]->PDPT, PDPT[0]->PD, PD[i]=2MB id ---
     ; pml4_boot[0] = pdpt_low | P|RW
     mov eax, pdpt_low
     or eax, 0x3
@@ -96,7 +96,10 @@ _start:
     mov eax, pd_low
     or eax, 0x3
     mov [pdpt_low], eax
-    ; pd_low[i] = i*2MB | P|RW|PS (0x83), i = 0..3  (covers 0-8MB)
+    ; pd_low[i] = i*2MB | P|RW|PS (0x83), i = 0..511  (covers 0-1GB).
+    ; D1: the full 1GB matters — the kernel image + first-free PMM frames
+    ; must ALL be identity-accessible pre-reload (__pmm_alloc zeroes via
+    ; identity; once .bss passed 8MB the old 4-entry map faulted here).
     mov ecx, 0
 .fill_pd:
     mov eax, ecx
@@ -105,7 +108,7 @@ _start:
     mov [pd_low + ecx*8], eax
     mov dword [pd_low + ecx*8 + 4], 0
     inc ecx
-    cmp ecx, 4
+    cmp ecx, 512
     jb .fill_pd
 
     ; --- enable long mode ---

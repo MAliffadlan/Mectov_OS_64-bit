@@ -70,8 +70,23 @@ static void cmd_run(char **av, int ac) {
     dl_nl(&l);
 }
 
+/* SPAWN path (shell `run`, winsrv boot return): _start_args jumps here,
+ * not to demo_main (same args_main rule as every other demo). */
+static void shell_loop(void);
+
 void demo_main(void) {
     put("MCT SHELL (help for commands)");
+    shell_loop();
+}
+
+void args_main(int argc, const char **argv) {
+    (void)argc;
+    (void)argv;
+    put("MCT SHELL (help for commands)");
+    shell_loop();
+}
+
+static void shell_loop(void) {
     static char line[128];
     for (;;) {
         /* Prompt (no newline): raw print of "mct> ". */

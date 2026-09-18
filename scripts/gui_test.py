@@ -92,6 +92,9 @@ def main():
             # winsrv draws keys instead of echoing: open-loop exit.
             type_open(q, list("exit") + ["ret"])
             exited = wait_for(SERIAL, "WIN-EXIT", 30)
+            if not exited:
+                type_open(q, ["backspace"] * 5 + list("exit") + ["ret"])
+                exited = wait_for(SERIAL, "WIN-EXIT", 30)
             back = wait_for(SERIAL, "reaped", 30)
             time.sleep(2)
             shot(q, SHOT2)

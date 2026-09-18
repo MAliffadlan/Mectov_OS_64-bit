@@ -24,7 +24,7 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/k64_loader64.o $(OBJ64_DIR)/k64_smp64.o \
          $(OBJ64_DIR)/k64_kbd64.o $(OBJ64_DIR)/k64_cons64.o \
          $(OBJ64_DIR)/k64_mouse64.o $(OBJ64_DIR)/k64_fb64.o \
-         $(OBJ64_DIR)/font8x16.o \
+         $(OBJ64_DIR)/k64_win64.o $(OBJ64_DIR)/font8x16.o \
          $(OBJ64_DIR)/entry64.o $(OBJ64_DIR)/tramp64_bin.o \
          $(OBJ64_DIR)/hello64_mct.o $(OBJ64_DIR)/fpu64_mct.o \
          $(OBJ64_DIR)/clone64_mct.o $(OBJ64_DIR)/forkdemo64_mct.o \

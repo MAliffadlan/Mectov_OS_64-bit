@@ -36,6 +36,12 @@ static void mark_dirty(u32 y0, u32 y1) {
     if (y1 > dirty_y1) dirty_y1 = y1;
 }
 
+/* D1: window slots dirty screen rows (same band mechanism). */
+void cons_mark_dirty(u32 y0, u32 y1) {
+    if (!live) return;
+    mark_dirty(y0, y1);
+}
+
 int cons_live(void) {
     return live;
 }
@@ -275,6 +281,7 @@ void cons_present(void) {
         volatile u32 *d = fb + (u64)y * fb_stride;
         u32 *s = cons_bb + (u64)y * fb_stride;
         for (u32 x = 0; x < fb_w; x++) d[x] = s[x];
+        win_composite_scanline(y, (u32 *)d, fb_w);
         if (y >= my && y < my + 16) {
             u16 bits = mouse_sprite[y - my];
             for (u32 i = 0; i < 12; i++) {

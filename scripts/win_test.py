@@ -123,6 +123,9 @@ def main():
             print(f"layout: {layout}")
             type_open(q, list("hi") + ["ret"])
             echoed = wait_for(SERIAL, "WIN-LINE hi", 30)
+            if not echoed:  # open-loop keys can die under boot load; clear
+                type_open(q, ["backspace"] * 5 + list("hi") + ["ret"])
+                echoed = wait_for(SERIAL, "WIN-LINE hi", 30)
             # Drag: title starts at (192,150); mouse at (511,383).
             q.hmp("mouse_move 1 -223")
             time.sleep(2)
@@ -137,6 +140,9 @@ def main():
             print(f"dragged: {dragged}, pixels: {moved}")
             type_open(q, list("exit") + ["ret"])
             exited = wait_for(SERIAL, "WIN-EXIT", 30)
+            if not exited:
+                type_open(q, ["backspace"] * 5 + list("exit") + ["ret"])
+                exited = wait_for(SERIAL, "WIN-EXIT", 30)
             time.sleep(2)
             shot(q, SHOT3)
             px3 = load_rgb(SHOT3)

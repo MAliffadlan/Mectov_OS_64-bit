@@ -9,6 +9,9 @@ SMP="${MECTOV64_SMP:-4}"
 MEM="${MECTOV64_MEM:-256}"
 HEADLESS=0
 if [ "${1:-}" = "--headless" ]; then HEADLESS=1; fi
+# Interactive boots straight to the desktop (kernel "gui" cmdline);
+# headless/gates stay on the text console. Override with MECTOV64_CMDLINE.
+if [ "$HEADLESS" != "1" ]; then MECTOV64_CMDLINE="${MECTOV64_CMDLINE:-gui}"; fi
 
 echo "[*] Building myos64.bin..."
 make myos64.bin || { echo "[-] myos64 build failed"; exit 1; }
