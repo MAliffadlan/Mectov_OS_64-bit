@@ -81,15 +81,9 @@ void gdt64_ap_load(int idx, u64 rsp0) {
     gdt64_flush(&gdt_ptr, (u16)GDT64_TSS_SEL(idx));
 }
 
-/* M4/M6: the scheduler (BSP-only in M6; per-CPU-current in M7) points RSP0
- * at the new task's kernel stack top, so the next interrupt from CPL3
- * lands on the right stack. */
-void tss64_set_rsp0(u64 rsp0) {
-    tss_array[0].rsp0 = rsp0;
-}
-
-/* M7: same, for an explicit CPU (the scheduler calls this with its own
- * index on every switch — RSP0 always follows the task per core). */
+/* M7: RSP0 follows the task per core (the scheduler calls
+ * tss64_set_rsp0_cpu with its own index on every switch), so the next
+ * interrupt from CPL3 lands on the right stack. */
 void tss64_set_rsp0_cpu(int cpu, u64 rsp0) {
     if (cpu >= 0 && cpu < NCPU_MAX) tss_array[cpu].rsp0 = rsp0;
 }

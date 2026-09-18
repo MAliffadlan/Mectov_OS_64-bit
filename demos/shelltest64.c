@@ -10,7 +10,11 @@ void demo_main(void) {
     dl_u(&l, (u64)pid);
     dl_nl(&l);
     const char *av[2] = { "alpha", "beta" };
+    u64 t0 = d_tsc();
     long id = d_spawn("argdemo", 2, av);
+    dl_s(&l, "PERF spawn-argdemo tsc=");
+    dl_u(&l, d_tsc() - t0);
+    dl_nl(&l);
     if (id < 0) {
         dl_s(&l, "SHELLTEST-SPAWN-FAIL ");
         dl_u(&l, (u64)(-id));

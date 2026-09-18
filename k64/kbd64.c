@@ -58,18 +58,11 @@ int kbd_translate(u8 sc) {
 }
 
 /* Buffer one translated character (legacy text-console path). */
-void kbd_push_raw(int c) {
-    u8 h = kbd_head;
+void kbd_push_raw(int c) {    u8 h = kbd_head;
     u8 n = (u8)(h + 1);
     if (n == kbd_tail) return; /* full: drop oldest? No — drop newest. */
     kbd_buf[h] = (u8)c;
     kbd_head = n;
-}
-
-/* Called from the IRQ1 stub (vec 33) with the raw scancode byte. */
-void kbd_push(u8 sc) {
-    int c = kbd_translate(sc);
-    if (c >= 0) kbd_push_raw(c);
 }
 
 /* Drain any stale bytes (boot firmwaree leftovers). */

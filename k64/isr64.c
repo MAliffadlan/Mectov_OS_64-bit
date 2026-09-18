@@ -56,8 +56,7 @@ u64 isr64_handler(regs64_t *r) {
         if ((inb(0x64) & 0x21) == 0x21) {
             u8 b = inb(0x60);
             u64 f = s_lock_hold();
-            mouse_push(b);
-            cons_present();
+            if (mouse_push(b)) cons_present(); /* P1: motion only */
             s_lock_drop(f);
         }
         EOI_SLAVE();

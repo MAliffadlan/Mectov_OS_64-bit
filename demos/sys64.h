@@ -109,6 +109,12 @@ static void d_putd(double d) {
 }
 
 static inline long d_pid(void) { return sys0(20); }
+/* P0: userspace TSC stamp (CR4.TSD=0, legal in Ring-3). */
+static inline u64 d_tsc(void) {
+    unsigned lo, hi;
+    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((u64)hi << 32) | lo;
+}
 static inline long d_ticks(void) { return sys0(8); }
 static inline long d_yield(void) { return sys0(9); }
 static inline long d_sleep(u64 t) { return sys1(19, t); }

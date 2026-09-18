@@ -11,9 +11,7 @@
 #include "cpu64.h"
 
 #define MCT2_MAGIC 0x3243544DUL /* "MCT2" */
-#define MCT2_VERSION 1
-#define MCT2_HDR_SIZE 40
-#define MCT2_HDR2_SIZE 48 /* v2 (+text_size for W^X) */
+#define MCT2_HDR2_SIZE 48 /* v2 header (+text_size for W^X); v1 unsupported */
 #define ELF_BASE 0x60000000ULL /* PIE load base (PDPT[1], clear of demos) */
 #define LOAD_CAP (16ULL * 1024 * 1024)
 
@@ -91,22 +89,17 @@ static int map_range_fl(u64 va, u64 size, u64 flags) {
     return 0;
 }
 
-static int map_range(u64 va, u64 size) {
-    return map_range_fl(va, size, VMM_RW | VMM_US);
-}
-
 static int load_mct2(u64 target, const u8 *img, u64 len, u64 *entry_out,
                      u64 *base_out, u64 *end_out) {
-    if (len < MCT2_HDR_SIZE) return -1;
+    if (len < MCT2_HDR2_SIZE) return -1;
     u32 ver = rd32(img + 4);
-    if (rd32(img) != MCT2_MAGIC || (ver != 1 && ver != 2)) return -1;
-    u64 hsz = (ver == 2) ? MCT2_HDR2_SIZE : MCT2_HDR_SIZE;
-    if (len < hsz) return -1;
+    if (rd32(img) != MCT2_MAGIC || ver != 2) return -1; /* v1 retired (P3) */
+    u64 hsz = MCT2_HDR2_SIZE;
     u64 base = rd64(img + 8);
     u64 entry_off = rd64(img + 16);
     u64 code_size = rd64(img + 24);
     u64 bss_size = rd64(img + 32);
-    u64 text_size = (ver == 2) ? rd64(img + 40) : code_size;
+    u64 text_size = rd64(img + 40);
     /* MCT2 images link <2GB (small model); refuse wild bases. */
     if (base >= 0x80000000ULL) return -1;
     if (!vmm_is_canonical(base) || entry_off >= code_size + 4096) return -1;
@@ -116,13 +109,10 @@ static int load_mct2(u64 target, const u8 *img, u64 len, u64 *entry_out,
     if (hsz + code_size > len || hsz + code_size < hsz) return -1;
     u64 total = code_size + bss_size;
     if (!total) return -1;
-    if (ver == 1) {
-        /* Legacy flat RW mapping (pre-W^X images). */
-        if (map_range(base, total)) return -1;
-    } else {
-        /* W^X: text RX, data+BSS RW|NX. The image is linked with .data page-
-         * aligned after text (see build_mct64.py), so text_size is already a
-         * page multiple and regions never share a page. */
+    /* W^X: text RX, data+BSS RW|NX. The image is linked with .data page-
+     * aligned after text (see build_mct64.py), so text_size is already a
+     * page multiple and regions never share a page. */
+    {
         u64 dfl = VMM_RW | VMM_US;
         if (cpu_nx_enabled()) dfl |= VMM_NX;
         if (text_size > 0 && map_range_fl(base, text_size, VMM_US)) return -1;

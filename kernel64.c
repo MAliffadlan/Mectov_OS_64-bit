@@ -13,6 +13,8 @@
  * the same CPU can't happen (no print path re-enters). */
 static spin64_t serial_lock = SPIN64_INIT;
 
+/* P2: spawn_args path selector (set from cmdline; read by task64.c). */
+int flag_spawn_clone = 0;
 /* VGA-1: Multiboot2 framebuffer geometry, filled during tag parsing and
  * consumed by cons_init() after mem64_init() (the FB pages are UC-mapped
  * by then, so the console can write immediately). Zero addr = no usable
@@ -229,11 +231,53 @@ struct mb2_tag { u32 type; u32 size; };
 #define MB2_TAG_MEMMAP 6
 #define MB2_TAG_FB 8
 
-/* We run identity-mapped low (boot64.asm maps 0-8MB), so the Multiboot2
+/* We run identity-mapped low (boot64.asm maps 0-1GB), so the Multiboot2
  * info pointer (low phys) is directly dereferenceable here. */
+/* P0: TSC milestone stamps (t0 = main-entry origin). One lock hold for
+ * the whole line via lock-free primitives (s_puts locks internally —
+ * nesting would self-deadlock); after STI, CPUs interleave per-puts. */
+static void perf_puts_locked(const char *s) {
+    for (; *s; s++) {
+        if (*s == '\n') s_putc_locked('\r');
+        s_putc_locked(*s);
+    }
+}
+static void perf_dec64_locked(u64 v) {
+    char buf[20];
+    int n = 0;
+    if (!v) {
+        s_putc_locked('0');
+        return;
+    }
+    while (v > 0 && n < 20) {
+        buf[n++] = (char)('0' + v % 10);
+        v /= 10;
+    }
+    while (n > 0) s_putc_locked(buf[--n]);
+}
+static void perf_mark(const char *tag, u64 t0) {
+    u32 lo, hi;
+    u64 f = s_lock_hold();
+    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+    perf_puts_locked("PERF ");
+    perf_puts_locked(tag);
+    perf_puts_locked(" tsc=");
+    perf_dec64_locked((((u64)hi << 32) | lo) - t0);
+    perf_puts_locked("\n");
+    s_lock_drop(f);
+}
+
 void kernel64_main(u64 magic, u64 mb_info) {
     serial_init();
     s_puts("\n[KERNEL64] boot start (long mode)\n");
+    /* P0 perf origin: TSC is the only free-running counter this early
+     * (PIT/ticks start later, IF=0 throughout boot). */
+    u64 t_boot;
+    {
+        u32 lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        t_boot = ((u64)hi << 32) | lo;
+    }
     /* M7.3 ASLR seed: TSC varies per boot (weak entropy, documented). */
     {
         u32 tsc_lo, tsc_hi;
@@ -349,6 +393,19 @@ void kernel64_main(u64 magic, u64 mb_info) {
                 flag_noap = 1;
         }
     }
+    /* P2: "spawnclone" restores the old clone-the-caller spawn_args path
+     * (bisect helper; default is fresh-space-from-template). */
+    if (cmdline && cmdline < (const char *)(end)) {
+        for (u64 i = 0; i < 256; i++) {
+            const char *c = cmdline + i;
+            if ((u64)(c + 10) >= end) break;
+            if (*c == '\0') break;
+            if (c[0] == 's' && c[1] == 'p' && c[2] == 'a' && c[3] == 'w' &&
+                c[4] == 'n' && c[5] == 'c' && c[6] == 'l' && c[7] == 'o' &&
+                c[8] == 'n' && c[9] == 'e')
+                flag_spawn_clone = 1;
+        }
+    }
     /* "gui" boots straight to the desktop (winsrv as the interactive
      * task); anything else (empty/"text") boots to the text shell.
      * Token match (so "nogui" does NOT count). */
@@ -376,6 +433,22 @@ void kernel64_main(u64 magic, u64 mb_info) {
         s_puts("[K64] cons: framebuffer console live\n");
     else
         s_puts("[K64] cons: no usable framebuffer, serial only\n");
+    /* P0 present microbench: 32x one text-row band (the per-char cost). */
+    if (cons_live()) {
+        u64 t0, t1;
+        u32 lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        t0 = ((u64)hi << 32) | lo;
+        for (int i = 0; i < 32; i++) {
+            cons_mark_dirty(0, 16);
+            cons_present();
+        }
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        t1 = ((u64)hi << 32) | lo;
+        s_puts("PERF present-band tsc=");
+        s_dec64((t1 - t0) / 32);
+        s_puts("\n");
+    }
 
     /* --- M5: tasks (boot context becomes task[0] idle) + embedded image
      * registry (MCT2/ELF64, parsed by the loader at spawn/exec) --- */
@@ -481,6 +554,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
         for (;;) __asm__ __volatile__("cli; hlt");
     }
     s_puts("[K64] M4 TASK OK (11 user demos)\n");
+    perf_mark("boot-spawned", t_boot);
 
     /* --- M2: CPU tables + IRQs --- */
     s_puts("[K64] M2 init GDT64...\n");
@@ -501,6 +575,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
     s_puts(" ncpus=");
     s_dec64((u64)smp_cpu_count());
     s_puts("\n");
+    perf_mark("boot-smp", t_boot);
     s_puts("[K64] M2 IDT64 OK, testing int3...\n");
     __asm__ __volatile__("int3");
     s_puts("[K64] EXC3 OK (int3 returned)\n");
@@ -513,5 +588,6 @@ void kernel64_main(u64 magic, u64 mb_info) {
         smp_wake_aps(); /* M7: parked APs join the scheduler */
     }
     s_puts("[K64] IRQs on (100Hz PIT+LAPIC), waiting ticks...\n");
+    perf_mark("boot-ready", t_boot);
     for (;;) __asm__ __volatile__("hlt");
 }

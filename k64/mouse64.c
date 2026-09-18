@@ -100,14 +100,15 @@ absent:
 }
 
 /* Called from the IRQ12 stub (vec 44) with one controller byte. The ISR
- * wrapper holds serial_lock and presents after this returns. */
-void mouse_push(u8 b) {
+ * wrapper holds serial_lock. Returns 1 when the cursor moved (caller
+ * presents); buttons-only packets need no present. */
+int mouse_push(u8 b) {
     u32 ox, oy;
     int dx, dy;
-    if (!mouse_live) return;
-    if (pkt_i == 0 && !(b & 0x08)) return; /* resync on bit 3 */
+    if (!mouse_live) return 0;
+    if (pkt_i == 0 && !(b & 0x08)) return 0; /* resync on bit 3 */
     pkt[pkt_i++] = b;
-    if (pkt_i < 3) return;
+    if (pkt_i < 3) return 0;
     pkt_i = 0;
     ox = mouse_x;
     oy = mouse_y;
@@ -126,11 +127,14 @@ void mouse_push(u8 b) {
             mouse_y = (u32)ny;
         }
     }
-    /* Refresh on every packet (buttons-only changes included); the ISR
-     * wrapper presents right after, so the cursor tracks in real time. */
+    /* Events always flow (slots must see buttons-only changes); the
+     * present is skipped unless pixels moved (P1: presenting 3x per
+     * packet for buttons-only traffic was pure UC waste). */
     mouse_seq++;
-    cons_cursor_moved(ox, oy, mouse_x, mouse_y);
     win_route_mouse(mouse_x, mouse_y, mouse_btn); /* D2: may be no slots */
+    if (ox == mouse_x && oy == mouse_y) return 0;
+    cons_cursor_moved(ox, oy, mouse_x, mouse_y);
+    return 1;
 }
 
 /* Packed Ring-3 poll: x | y<<12 | buttons<<24 | seq<<32. Never blocks. */

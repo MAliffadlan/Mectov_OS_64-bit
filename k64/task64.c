@@ -269,7 +269,15 @@ int task64_spawn_args(const char *kname, int argc, char **kargv) {
     if (!img) return -2;
     task64_t *t = alloc_slot(kname);
     if (!t) return -12;
-    u64 child = vmm_clone_space(cpu_read_cr3() & ~0xFFFULL);
+    /* P2: fresh space from the boot template (exec pattern), NOT a clone
+     * of the caller: the child inherits nothing (image+ustack+argv are
+     * all wired below), so duplicating + COW-marking the parent's tables
+     * plus a global shootdown was pure waste. Fallback via cmdline. */
+    extern u64 pml4_boot[];
+    extern int flag_spawn_clone;
+    u64 child = flag_spawn_clone
+                    ? vmm_clone_space(cpu_read_cr3() & ~0xFFFULL)
+                    : vmm_clone_space((u64)pml4_boot);
     if (!child) { task_unreserve(t); return -12; }
     t->cr3 = child;
     t->parent = cur ? cur->id : 0;

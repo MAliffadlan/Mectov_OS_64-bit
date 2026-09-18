@@ -32,6 +32,8 @@ void s_rawu(u64 v);
 int cons_init(u64 addr, u32 pitch, u32 w, u32 h, u32 bpp);
 int cons_live(void);
 void cons_putc(char c);
+void cons_present(void);              /* P1: flush dirty bands (lock held) */
+void cons_mark_dirty(u32 y0, u32 y1); /* D1: window slots dirty rows */
 
 /* 64-bit interrupt frame built by k64/entry64.asm isr64_common.
  * Field order MUST match the stub push order:
@@ -48,7 +50,6 @@ typedef struct {
 /* Init + IRQ (defined in k64/). */
 void gdt64_init(void);
 void gdt64_ap_load(int idx, u64 rsp0); /* M6: AP's own TR + shared GDTR */
-void tss64_set_rsp0(u64 rsp0);
 void tss64_set_rsp0_cpu(int cpu, u64 rsp0); /* M7: per-CPU RSP0 */
 void idt64_init(void);
 void idt64_load(void); /* M6: reload the shared IDT on an AP */
@@ -137,12 +138,6 @@ typedef struct {
     int owner;
     char title[16];
 } wininfo_t;
-#define SYS64_PRINT 1
-#define SYS64_TICKS 8
-#define SYS64_YIELD 9
-#define SYS64_EXIT 10
-#define SYS64_PID 20
-#define SYS64_CLONE 104
 
 /* Ring-3 layout (M5: every task owns its PML4; user ranges never alias the
  * low identity map, so shared kernel tables are never written by tasks). */
@@ -199,12 +194,11 @@ void sched_set_running(void);    /* M7: shootdown gate (mem64.c) */
 int task64_current_id(void);
 task64_t *task64_self(void); /* current TCB (for base/getpid paths) */
 void kbd_init(void);
-void kbd_push(u8 sc);
 int kbd_translate(u8 sc); /* D2: scancode -> ASCII/-1 (vec33 routing) */
 void kbd_push_raw(int c); /* D2: buffer a translated char (legacy path) */
 int kbd_try_get(void);
 void mouse_init(void);   /* G1: PS/2 aux, safe no-op when absent */
-void mouse_push(u8 b);   /* IRQ12 byte (caller holds serial_lock) */
+int mouse_push(u8 b);    /* IRQ12 byte; 1 = cursor moved (present it) */
 u64 mouse_get(void);     /* packed poll for SYS64_GETMOUSE */
 void mouse_cursor_state(u32 *x, u32 *y, int *shown);
 u64 s_lock_hold(void);   /* export serial_lock for IRQ multi-op paths */

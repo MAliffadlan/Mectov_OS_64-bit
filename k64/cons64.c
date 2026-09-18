@@ -101,18 +101,29 @@ static void cursor_draw(void) {
     cur_shown = 1;
 }
 
+/* P1: string ops for bulk moves (fewer guest insns under TCG, fast
+ * strings on silicon; UC cost itself is unchanged — see PAT note). */
+static void copy_u32(u32 *d, const u32 *s, u64 n) {
+    __asm__ __volatile__("cld; rep movsl"
+                         : "+D"(d), "+S"(s), "+c"(n)
+                         : : "memory");
+}
+
+static void fill_u32(u32 *d, u32 v, u64 n) {
+    __asm__ __volatile__("cld; rep stosl"
+                         : "+D"(d), "+c"(n)
+                         : "a"(v)
+                         : "memory");
+}
+
 static void scroll_up(void) {
     /* Text area only: the status strip below nrows*16 never moves. */
     u32 text_h = nrows * 16;
-    for (u32 y = 0; y + 16 < text_h; y++) {
-        u32 *dst = cons_bb + (u64)y * fb_stride;
-        u32 *src = cons_bb + (u64)(y + 16) * fb_stride;
-        for (u32 x = 0; x < fb_w; x++) dst[x] = src[x];
-    }
-    for (u32 y = text_h - 16; y < text_h; y++) {
-        u32 *dst = cons_bb + (u64)y * fb_stride;
-        for (u32 x = 0; x < fb_w; x++) dst[x] = CONS_BG_DEF;
-    }
+    for (u32 y = 0; y + 16 < text_h; y++)
+        copy_u32(cons_bb + (u64)y * fb_stride,
+                 cons_bb + (u64)(y + 16) * fb_stride, fb_w);
+    for (u32 y = text_h - 16; y < text_h; y++)
+        fill_u32(cons_bb + (u64)y * fb_stride, CONS_BG_DEF, fb_w);
     mark_dirty(0, text_h);
 }
 
@@ -127,7 +138,7 @@ static void newline(void) {
 
 void cons_clear(void) {
     if (!live) return;
-    for (u64 i = 0; i < (u64)fb_h * fb_stride; i++) cons_bb[i] = CONS_BG_DEF;
+    fill_u32(cons_bb, CONS_BG_DEF, (u64)fb_h * fb_stride);
     mark_dirty(0, fb_h);
     cur_shown = 0; /* wipe took down any block with everything else */
     cur_x = 0;
@@ -280,7 +291,7 @@ void cons_present(void) {
     for (u32 y = y0; y < y1; y++) {
         volatile u32 *d = fb + (u64)y * fb_stride;
         u32 *s = cons_bb + (u64)y * fb_stride;
-        for (u32 x = 0; x < fb_w; x++) d[x] = s[x];
+        copy_u32((u32 *)d, s, fb_w);
         win_composite_scanline(y, (u32 *)d, fb_w);
         if (y >= my && y < my + 16) {
             u16 bits = mouse_sprite[y - my];

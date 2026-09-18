@@ -19,10 +19,16 @@ echo "[*] Building mectov64.iso (multiboot2)..."
 make iso64 MECTOV64_CMDLINE="${MECTOV64_CMDLINE:-}" || { echo "[-] iso64 failed"; exit 1; }
 rm -f serial64.log
 
-QEMU_ARGS=(-machine q35 -cpu qemu64,+nx -m "$MEM" -smp "$SMP"
+QEMU_ARGS=(-machine q35 -m "$MEM" -smp "$SMP"
     -vga std -cdrom mectov64.iso
     -serial file:serial64.log
     -no-reboot)
+# P1: KVM when available (same rule as the QMP gates); TCG otherwise.
+if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+    QEMU_ARGS+=(-cpu host -enable-kvm)
+else
+    QEMU_ARGS+=(-cpu qemu64,+nx)
+fi
 
 if [ "$HEADLESS" = "1" ]; then
     echo "[*] Headless boot (q35, ${MEM}MB, smp=$SMP, 60s) -> serial64.log"
@@ -79,7 +85,11 @@ if [ "$HEADLESS" = "1" ]; then
     test "$(grep -a "CPU-WORKER" serial64.log 2>/dev/null | grep -o "cpu=[0-9]" | sort -u | wc -l)" -ge 4 && \
     ! grep -q "FATAL" serial64.log 2>/dev/null && \
     ! grep -q "FAIL" serial64.log 2>/dev/null && \
-    grep -q "tick 500" serial64.log 2>/dev/null && PASS=1
+    grep -q "tick 500" serial64.log 2>/dev/null && \
+    python3 -c "import re,sys; d=open('serial64.log',errors='replace').read(); \
+v=[int(m) for tag in ['boot-spawned','boot-smp','boot-ready'] for m in re.findall('PERF '+tag+r' tsc=(\d+)',d)]; \
+s=re.findall(r'PERF spawn-argdemo tsc=(\d+)',d); \
+sys.exit(0 if len(v)==3 and v[0]<v[1]<v[2]<2**47 and s and int(s[0])<2**47 else 1)" && PASS=1
     if [ "$PASS" = "1" ]; then
         echo "[+] M7 BOOT OK: SMP + fork/exec + shell + brk/demand + W^X + ASLR"
         exit 0
