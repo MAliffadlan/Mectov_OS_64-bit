@@ -23,7 +23,7 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/k64_task64.o $(OBJ64_DIR)/k64_syscall64.o \
          $(OBJ64_DIR)/k64_loader64.o $(OBJ64_DIR)/k64_smp64.o \
          $(OBJ64_DIR)/k64_kbd64.o $(OBJ64_DIR)/k64_cons64.o \
-         $(OBJ64_DIR)/font8x16.o \
+         $(OBJ64_DIR)/k64_mouse64.o $(OBJ64_DIR)/font8x16.o \
          $(OBJ64_DIR)/entry64.o $(OBJ64_DIR)/tramp64_bin.o \
          $(OBJ64_DIR)/hello64_mct.o $(OBJ64_DIR)/fpu64_mct.o \
          $(OBJ64_DIR)/clone64_mct.o $(OBJ64_DIR)/forkdemo64_mct.o \
@@ -31,7 +31,7 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/shell64_mct.o $(OBJ64_DIR)/argdemo64_mct.o \
          $(OBJ64_DIR)/shelltest64_mct.o $(OBJ64_DIR)/brkdemo64_mct.o \
          $(OBJ64_DIR)/nxtest64_mct.o $(OBJ64_DIR)/asldemo64_mct.o \
-         $(OBJ64_DIR)/smptest64_mct.o
+         $(OBJ64_DIR)/smptest64_mct.o $(OBJ64_DIR)/mousedemo64_mct.o
 
 all: myos64.bin
 
@@ -99,6 +99,9 @@ demos/asldemo64.mct: demos/asldemo64.c demos/sys64.h demos/entry.S scripts/build
 demos/smptest64.mct: demos/smptest64.c demos/sys64.h demos/entry.S scripts/build_mct64.py
 	python3 scripts/build_mct64.py demos/smptest64.c demos/smptest64.mct 0x4B000000
 
+demos/mousedemo64.mct: demos/mousedemo64.c demos/sys64.h demos/entry.S scripts/build_mct64.py
+	python3 scripts/build_mct64.py demos/mousedemo64.c demos/mousedemo64.mct 0x4C000000
+
 demos/execchild64.elf: demos/execchild64.c demos/sys64.h demos/entry.S scripts/build_elf64.py
 	python3 scripts/build_elf64.py demos/execchild64.c demos/execchild64.elf
 
@@ -127,7 +130,7 @@ clean64:
 clean: clean64
 
 check64: iso64
-	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py
+	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py && python3 scripts/mouse_test.py
 
 check: check64
 

@@ -94,6 +94,7 @@ static inline long d_ps(ps_entry_t *b, long max) {
     return sys2(134, (u64)b, (u64)max);
 }
 static inline long d_getchar(void) { return sys0(135); }
+static inline long d_getmouse(void) { return sys0(137); }
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

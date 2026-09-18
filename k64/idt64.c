@@ -89,7 +89,7 @@ void idt64_load(void) {
     __asm__ __volatile__("lidt (%0)" :: "r"(&p) : "memory");
 }
 
-void pic_remap_mask_timer_kbd(void) {
+void pic_remap_mask_timer_kbd_mouse(void) {
     /* ICW1: init + expect ICW4. */
     outb(0x20, 0x11); io_wait();
     outb(0xA0, 0x11); io_wait();
@@ -102,10 +102,10 @@ void pic_remap_mask_timer_kbd(void) {
     /* ICW4: 8086 mode. */
     outb(0x21, 0x01); io_wait();
     outb(0xA1, 0x01); io_wait();
-    /* Mask everything except IRQ0 (timer) + IRQ1 (M7.2 keyboard): 0xFC.
-     * Slave fully masked. */
-    outb(0x21, 0xFC);
-    outb(0xA1, 0xFF);
+    /* G1: IRQ0 (timer) + IRQ1 (keyboard) + IRQ2 (cascade for slave
+     * IRQ12 mouse) on master: 0xF8. Slave: IRQ12 only: 0xEF. */
+    outb(0x21, 0xF8);
+    outb(0xA1, 0xEF);
 }
 
 void pit_init_hz(u32 hz) {

@@ -52,7 +52,7 @@ void tss64_set_rsp0(u64 rsp0);
 void tss64_set_rsp0_cpu(int cpu, u64 rsp0); /* M7: per-CPU RSP0 */
 void idt64_init(void);
 void idt64_load(void); /* M6: reload the shared IDT on an AP */
-void pic_remap_mask_timer_kbd(void);
+void pic_remap_mask_timer_kbd_mouse(void);
 void pit_init_hz(u32 hz);
 u64 isr64_handler(regs64_t *r);
 u64 k64_ticks(void);
@@ -91,6 +91,7 @@ u64 k64_ticks(void);
 #define SYS64_PS 134      /* M7.2: RBX=ptr RCX=max -> count filled */
 #define SYS64_GETCHAR 135 /* M7.2: nonblocking key, -1 if empty */
 #define SYS64_SPAWN 136   /* M7.2: RBX=name RCX=argc RDX=argv -> id */
+#define SYS64_GETMOUSE 137 /* G1: -> packed x|y<<12|btn<<24|seq<<32 */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -165,6 +166,12 @@ task64_t *task64_self(void); /* current TCB (for base/getpid paths) */
 void kbd_init(void);
 void kbd_push(u8 sc);
 int kbd_try_get(void);
+void mouse_init(void);   /* G1: PS/2 aux, safe no-op when absent */
+void mouse_push(u8 b);   /* IRQ12 byte (caller holds serial_lock) */
+u64 mouse_get(void);     /* packed poll for SYS64_GETMOUSE */
+void mouse_cursor_state(u32 *x, u32 *y, int *shown);
+u64 s_lock_hold(void);   /* export serial_lock for IRQ multi-op paths */
+void s_lock_drop(u64 f);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

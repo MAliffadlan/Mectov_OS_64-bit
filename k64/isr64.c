@@ -9,6 +9,7 @@
  * (masked), 39/47 spurious-IRQ-tolerant EOIs, 128 Ring-3 syscalls (M4 ABI0).
  */
 #include "cpu64.h"
+#include "cons64.h"
 
 static inline void outb(u16 port, u8 v) {
     __asm__ __volatile__("outb %0, %1" : : "a"(v), "Nd"(port));
@@ -37,7 +38,24 @@ u64 isr64_handler(regs64_t *r) {
         return syscall64_dispatch(r);
     }
     if (v == 33) { /* M7.2 keyboard: buffer scancode, EOI */
-        kbd_push(inb(0x60));
+        /* G1: consume only a real KBD byte (OBF set, AUX clear). A bare
+         * inb would eat a queued AUX byte (mouse misframe) or a stale
+         * value on a spurious IRQ. AUX bytes belong to vec44. */
+        if ((inb(0x64) & 0x21) == 0x01) kbd_push(inb(0x60));
+        EOI_MASTER();
+        return (u64)r;
+    }
+    if (v == 44) { /* G1 mouse: packet byte -> cursor, EOI both PICs */
+        /* Same guard mirrored: only AUX bytes (OBF+AUX). Anything else
+         * is a spurious IRQ or a KBD byte that IRQ1 will collect. */
+        if ((inb(0x64) & 0x21) == 0x21) {
+            u8 b = inb(0x60);
+            u64 f = s_lock_hold();
+            mouse_push(b);
+            cons_present();
+            s_lock_drop(f);
+        }
+        EOI_SLAVE();
         EOI_MASTER();
         return (u64)r;
     }

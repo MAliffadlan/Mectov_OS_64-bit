@@ -209,12 +209,43 @@ void cons_dims(u32 *w, u32 *h) {
     if (h) *h = fb_h;
 }
 
+/* G1 mouse cursor: 12x16 arrow, bit 11 = leftmost pixel. Composited onto
+ * the DISPLAY during present() — never stored in the backbuffer, so text,
+ * strip redraws and scrolls can neither corrupt nor smear it. */
+static const u16 mouse_sprite[16] = {
+    0x800, 0xC00, 0xE00, 0xF00, 0xF80, 0xFC0, 0xFE0, 0xFF0,
+    0xFF8, 0xFC0, 0xEC0, 0xC60, 0x060, 0x060, 0x040, 0x000,
+};
+#define CONS_CURSOR_FG 0x00FFFFFFUL /* white arrow */
+
+void cons_cursor_moved(u32 ox, u32 oy, u32 nx, u32 ny) {
+    (void)ox;
+    (void)nx;
+    /* Rows are copied whole, so only Y bands matter; pad generously. */
+    if (oy < fb_h) {
+        u32 a = oy > 16 ? oy - 16 : 0, b = oy + 32;
+        if (b > fb_h) b = fb_h;
+        mark_dirty(a, b);
+    }
+    if (ny < fb_h) {
+        u32 a = ny > 16 ? ny - 16 : 0, b = ny + 32;
+        if (b > fb_h) b = fb_h;
+        mark_dirty(a, b);
+    }
+}
+
 void cons_present(void) {
-    u32 y0, y1;
+    u32 y0, y1, mx = 0, my = 0;
+    int mshow = 0;
     if (!live) return;
     if (status_want != status_drawn) {
         status_redraw();
         status_drawn = status_want;
+    }
+    mouse_cursor_state(&mx, &my, &mshow);
+    if (!mshow) {
+        mx = 0;
+        my = fb_h;
     }
     y0 = dirty_y0;
     y1 = dirty_y1;
@@ -226,6 +257,15 @@ void cons_present(void) {
         volatile u32 *d = fb + (u64)y * fb_stride;
         u32 *s = cons_bb + (u64)y * fb_stride;
         for (u32 x = 0; x < fb_w; x++) d[x] = s[x];
+        if (y >= my && y < my + 16) {
+            u16 bits = mouse_sprite[y - my];
+            for (u32 i = 0; i < 12; i++) {
+                if (bits & (0x800u >> i)) {
+                    u32 xx = mx + i;
+                    if (xx < fb_w) d[xx] = CONS_CURSOR_FG;
+                }
+            }
+        }
     }
 }
 

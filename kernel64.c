@@ -84,6 +84,12 @@ void s_putc(char c) {
     s_putc_locked(c);
     spin64_unlock_irqrestore(&serial_lock, f);
 }
+
+/* G1: export the lock for IRQ multi-op paths (mouse IRQ = push+present
+ * atomically). Same irqsave discipline as s_putc; never used by fatal
+ * paths (those stay lock-free by design). */
+u64 s_lock_hold(void) { return spin64_lock_irqsave(&serial_lock); }
+void s_lock_drop(u64 f) { spin64_unlock_irqrestore(&serial_lock, f); }
 void s_puts(const char *s) {
     u64 f = spin64_lock_irqsave(&serial_lock);
     for (; *s; s++) {
@@ -384,6 +390,8 @@ void kernel64_main(u64 magic, u64 mb_info) {
     extern char _binary_demos_asldemo64_mct_end[];
     extern char _binary_demos_smptest64_mct_start[];
     extern char _binary_demos_smptest64_mct_end[];
+    extern char _binary_demos_mousedemo64_mct_start[];
+    extern char _binary_demos_mousedemo64_mct_end[];
 #define REG(n_, s_)                                                     \
     exec_register(n_, _binary_demos_##s_##_start,                        \
                   (u64)(_binary_demos_##s_##_end - _binary_demos_##s_##_start))
@@ -400,6 +408,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
     REG("nxtest", nxtest64_mct);
     REG("asldemo", asldemo64_mct);
     REG("smptest", smptest64_mct);
+    REG("mousedemo", mousedemo64_mct);
 #undef REG
     task64_init();
     int dh = task64_spawn_image("hello");
@@ -427,9 +436,10 @@ void kernel64_main(u64 magic, u64 mb_info) {
     idt64_init();
     /* PIC+PIT first (M7): LAPIC calibration inside smp_init needs a
      * running PIT; IRQs stay masked (IF=0) until the end of boot. */
-    pic_remap_mask_timer_kbd();
+    pic_remap_mask_timer_kbd_mouse();
     pit_init_hz(100);
     kbd_init(); /* drain stale PS/2 bytes; IRQ1 unmasked in the PIC above */
+    mouse_init(); /* G1: PS/2 aux init; safe no-op line when absent */
     /* --- M6: APs to long mode + IPI/TLB plumbing (needs IDT + MMIO) --- */
     smp_init();
     int smp_ok = smp_selftest();

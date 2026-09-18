@@ -78,6 +78,9 @@ u64 syscall64_dispatch(regs64_t *r) {
     case SYS64_GETCHAR:
         ret = (u64)(long)kbd_try_get();
         break;
+    case SYS64_GETMOUSE:
+        ret = mouse_get();
+        break;
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;
