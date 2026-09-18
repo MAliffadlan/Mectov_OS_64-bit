@@ -180,6 +180,8 @@ static inline long d_winfocus(long id) { return sys1(148, (u64)id); }
 static inline long d_winlist(wininfo_t *w, long max) {
     return sys2(149, (u64)w, (u64)max);
 }
+static inline long d_winraise(long id) { return sys1(150, (u64)id); }
+static inline long d_reboot(void) { return sys0(151); }
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

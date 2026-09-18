@@ -152,6 +152,13 @@ u64 syscall64_dispatch(regs64_t *r) {
         ret = (u64)(long)win_list((wininfo_t *)a, (int)b);
         break;
     }
+    case SYS64_WIN_RAISE:
+        ret = (u64)(long)win_raise((int)a);
+        break;
+    case SYS64_REBOOT:
+        sys_reboot();
+        ret = 0;
+        break;
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

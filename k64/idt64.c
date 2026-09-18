@@ -117,3 +117,9 @@ void pit_init_hz(u32 hz) {
     outb(0x40, (u8)(div & 0xFF));
     outb(0x40, (u8)((div >> 8) & 0xFF));
 }
+
+/* D3 reboot: keyboard-controller reset pulse (QEMU + real PS/2). */
+void sys_reboot(void) {
+    outb(0x64, 0xFE);
+    for (;;) __asm__ __volatile__("hlt");
+}

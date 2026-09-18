@@ -436,3 +436,37 @@ static void win_focus_drop_locked(int id) {
     if (win_focus == id) win_focus = -1;
     if (win_hover == id) win_hover = -1;
 }
+
+/* D3: raise a slot to topmost (stacking server-managed: any task may do
+ * it, like SETPOS). Whole screen dirtied — correct over any overlap. */
+long win_raise(int id) {
+    u64 f;
+    long ret;
+    int top, i;
+    win_t tmp;
+    if (id < 0 || id >= WIN_MAX) return -22;
+    f = s_lock_hold();
+    ret = -22;
+    if (wins[id].used) {
+        for (top = WIN_MAX - 1; top >= 0 && !wins[top].used; top--) {
+        }
+        if (id != top) {
+            tmp = wins[id];
+            for (i = id; i < top; i++) wins[i] = wins[i + 1];
+            wins[top] = tmp;
+            /* Focus tracks identity: indices in (id, top] slid down one. */
+            if (win_focus == id)
+                win_focus = top;
+            else if (win_focus > id && win_focus <= top)
+                win_focus--;
+            if (win_hover == id)
+                win_hover = top;
+            else if (win_hover > id && win_hover <= top)
+                win_hover--;
+            cons_mark_dirty(0, (u32)-1);
+        }
+        ret = 0;
+    }
+    s_lock_drop(f);
+    return ret;
+}

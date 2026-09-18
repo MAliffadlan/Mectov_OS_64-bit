@@ -104,6 +104,8 @@ u64 k64_ticks(void);
 #define SYS64_WIN_GETEVENT 147 /* D2: RBX=id RCX=ptr RDX=max -> count */
 #define SYS64_WIN_FOCUS 148    /* D2: RBX=id (-1 clears) -> 0/-errno */
 #define SYS64_WIN_LIST 149     /* D2: RBX=ptr RCX=max -> count */
+#define SYS64_WIN_RAISE 150    /* D3: RBX=id -> topmost -> 0/-errno */
+#define SYS64_REBOOT 151       /* D3: reset via 8042, noreturn */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -227,6 +229,8 @@ void win_route_mouse(u32 x, u32 y, u32 btn);
 long win_getevent(int id, winev_t *out, int max);
 long win_focus_set(int id);
 long win_list(wininfo_t *out, int max);
+long win_raise(int id);   /* D3: stacking is server-managed, any task */
+void sys_reboot(void);    /* D3: 8042 reset pulse, noreturn */
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

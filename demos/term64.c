@@ -94,6 +94,7 @@ void args_main(int argc, const char **argv) {
     DLINE(l);
     winev_t ev[8];
     int running = 1;
+    int loops = 0, seen_bar = 0;
     (void)argc;
     (void)argv;
     wid = d_wincreate(T_W, T_H, "MCT TERM");
@@ -143,6 +144,28 @@ void args_main(int argc, const char **argv) {
             }
         }
         if (changed) draw_all();
+        /* D3 orphan rule: when the server (taskbar) is gone, close up
+         * and exit so no ghost window outlives the session. Only armed
+         * after the bar was seen once (manual `run term` has no bar). */
+        if (++loops % 50 == 0) {
+            wininfo_t info[8];
+            long n = d_winlist(info, 8);
+            int bar = 0;
+            for (long i = 0; i < n; i++) {
+                if (info[i].title[0] == 't' && info[i].title[1] == 'a' &&
+                    info[i].title[2] == 's' && info[i].title[3] == 'k' &&
+                    info[i].title[4] == 'b' && info[i].title[5] == 'a' &&
+                    info[i].title[6] == 'r' && !info[i].title[7])
+                    bar = 1;
+            }
+            if (bar)
+                seen_bar = 1;
+            else if (seen_bar) {
+                dl_s(&l, "TERM-ORPHAN");
+                dl_nl(&l);
+                running = 0;
+            }
+        }
         if (running) d_sleep(2);
     }
     d_winclose(wid);

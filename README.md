@@ -12,7 +12,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **Preemptive multitasking** — per-CPU runqueues over one task table, COW `fork()`, `clone()`, `exec()` (MCT2/ELF64), `waitpid()` with zombies, `sleep()`, per-task eager FPU state, W^X loader, ASLR for ELF.
 - **Demand paging** — `brk()` heap grows the pointer; pages materialize zero-filled on first touch, with guard-hole and canonical-address enforcement.
 - **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu gui exit`, foreground `run` with real `argc/argv`, `gui` enters the window server.
-- **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, kernel window slots (8×, 8 MB pool) composited bottom-to-top, per-window input rings with focus routing, single-window server (`winsrv`) + separate terminal process (`term`).
+- **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, kernel window slots (8×, 8 MB pool) composited bottom-to-top, per-window input rings with focus routing, single-window server (`winsrv`) + separate terminal process (`term`), Start menu (launcher, task buttons, clock, reboot).
 - **Userspace graphics ABI** — `FB_INFO`/`FB_MAP`/`FB_UNMAP` map the display into Ring-3 (UC, single-owner, console auto-yields/restores), bump allocator over `brk`, `gfxdemo` proves direct pixels from userspace.
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
 
@@ -84,6 +84,8 @@ make check64            # headless + keyboard + framebuffer + mouse + gfx + win 
 | 147 | WIN_GETEVENT | id,ptr,max(≤16) -> count (per-window input ring) |
 | 148 | WIN_FOCUS | id (-1 clears) |
 | 149 | WIN_LIST | ptr,max -> count of {id,x,y,w,h,owner,title} |
+| 150 | WIN_RAISE | id -> topmost (server-managed stacking) |
+| 151 | REBOOT | 8042 reset pulse, noreturn |
 
 ## Known issues / future work
 

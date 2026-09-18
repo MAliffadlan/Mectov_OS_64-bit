@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""scripts/win_test.py — window server gate (G3 proof).
+"""scripts/win_test.py — window server gate (G3/D3 proof).
 
 Boots mectov64.iso with -vga std (KVM if available, else TCG), runs the
 `winsrv` Ring-3 window server, and asserts end to end: layout pixels,
-terminal echo over the keyboard, title-bar drag via mouse buttons, clean
-exit with console restore. Exit 0 PASS, nonzero FAIL.
+terminal echo over the keyboard, title-bar drag via mouse buttons, Start
+menu open/launch/exit, clean exit with console restore. Exit 0 PASS.
 
 Note: winsrv never echoes keys to serial (it draws them), so typing here
 is open-loop (0.3s spacing; the guest drains promptly) with WIN-READY /
@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from qmp import QMP
-from kbd_test import has_kvm, wait_for
+from kbd_test import has_kvm, wait_for, fsize
 from vga_test import load_rgb, fg_ratio, strip_bars_ok
 
 ISO = "mectov64.iso"
@@ -26,6 +26,7 @@ SOCK = "/tmp/qmp_wintest"
 SHOT1 = "/tmp/shot_win1.ppm"
 SHOT2 = "/tmp/shot_win2.ppm"
 SHOT3 = "/tmp/shot_win3.ppm"
+SHOTM = "/tmp/shot_winm.ppm"
 
 TEAL = (26, 43, 60)
 BLUE = (0, 0, 128)
@@ -41,7 +42,7 @@ def boot():
     cmd += ["-m", "256", "-smp", "4", "-vga", "std", "-cdrom", ISO,
             "-serial", f"file:{SERIAL}", "-no-reboot", "-display", "none",
             "-qmp", f"unix:{SOCK},server=on,wait=off"]
-    for p in (SOCK, SERIAL, SHOT1, SHOT2, SHOT3):
+    for p in (SOCK, SERIAL, SHOT1, SHOT2, SHOT3, SHOTM):
         try:
             os.unlink(p)
         except OSError:
@@ -83,6 +84,28 @@ def btn(q, down):
     if isinstance(r, dict) and "error" in r:
         raise RuntimeError(f"btn failed: {r['error']}")
     time.sleep(1)
+
+
+def move(q, dx, dy):
+    q.hmp(f"mouse_move {dx} {dy}")
+    time.sleep(2)
+
+
+def press(q):
+    btn(q, True)
+    btn(q, False)
+
+
+def press_wait(q, needle, timeout=30):
+    """Press, retry once (a press/release can die under boot load).
+    Safe: serial markers never lie, so a retry only fires when the first
+    press provably missed (no state changed, no toggle hazard)."""
+    mark = fsize(SERIAL)
+    press(q)
+    if wait_for(SERIAL, needle, timeout, since=mark):
+        return True
+    press(q)
+    return wait_for(SERIAL, needle, timeout, since=mark)
 
 
 def gray_count(px, x0, y0, x1, y1):
@@ -142,11 +165,23 @@ def main():
             px2 = load_rgb(SHOT2)
             moved = (px2[400, 205] == BLUE and px2[300, 155] == TEAL)
             print(f"dragged: {dragged}, pixels: {moved}")
-            type_open(q, list("exit") + ["ret"])
-            exited = wait_for(SERIAL, "WIN-EXIT", 30)
-            if not exited:
-                type_open(q, ["backspace"] * 5 + list("exit") + ["ret"])
-                exited = wait_for(SERIAL, "WIN-EXIT", 30)
+            # Menu: from drag end (612,210) to Start (40,754), CLICK it.
+            move(q, -572, 544)
+            menu1 = press_wait(q, "WIN-MENU open")
+            shot(q, SHOTM)
+            pxm = load_rgb(SHOTM)
+            menu_px = (pxm[10, 650] == (0x20, 0x25, 0x30) and
+                       pxm[200, 700] == (0x20, 0x25, 0x30))
+            print(f"menu open: {menu1}, pixels: {menu_px}")
+            # Click Terminal entry (110,656): second terminal appears.
+            move(q, 70, -98)
+            term2 = press_wait(q, "TERM-READY", 40)
+            print("second terminal:", "ready" if term2 else "MISS")
+            # Start again, then Exit entry (110,728): server winds down.
+            move(q, -70, 98)
+            menu2 = press_wait(q, "WIN-MENU open")
+            move(q, 70, -26)
+            exited = press_wait(q, "WIN-EXIT", 40)
             time.sleep(2)
             shot(q, SHOT3)
             px3 = load_rgb(SHOT3)
@@ -161,7 +196,9 @@ def main():
             (layout, "layout"),
             (echoed, "terminal-echo"),
             (dragged and moved, "drag"),
-            (exited, "clean-exit"),
+            (menu1 and menu_px, "menu"),
+            (term2, "menu-launch"),
+            (menu2 and exited, "menu-exit"),
             (alive > 0.005 and bars, "console-restored"),
             ("FATAL" not in serial, "no-FATAL"),
         ]
