@@ -19,6 +19,7 @@
 #define WIN_POOL_BYTES (8UL * 1024 * 1024)
 #define WIN_TITLE 16
 #define WIN_MAX_DIM 1024
+#define WIN_EV_N 64
 
 typedef struct {
     int used;
@@ -26,6 +27,9 @@ typedef struct {
     u32 off; /* byte offset into pool */
     task64_t *owner;
     char title[WIN_TITLE];
+    winev_t ev[WIN_EV_N];
+    volatile u8 ev_head; /* IRQ writer */
+    volatile u8 ev_tail; /* syscall reader */
 } win_t;
 
 static win_t wins[WIN_MAX];
@@ -89,6 +93,8 @@ static win_t *win_get(int id, task64_t *self, int need_owner) {
     return &wins[id];
 }
 
+static void win_focus_drop_locked(int id); /* defined with D2 routing */
+
 long win_create(u32 w, u32 h, const char *title) {
     task64_t *self = task64_self();
     u64 size;
@@ -139,6 +145,7 @@ long win_close(int id) {
             pool_free(s->off, s->w * s->h * 4);
             s->used = 0;
             s->owner = 0;
+            win_focus_drop_locked(id);
             cons_mark_dirty(y0, y1); /* erase the ghost next present */
             ret = 0;
         }
@@ -235,7 +242,9 @@ long win_setpos(int id, u32 x, u32 y) {
     f = s_lock_hold();
     ret = -22;
     {
-        win_t *s = win_get(id, self, 1);
+        /* D2: geometry is server-managed (single-user desktop), so any
+         * task may move any window; DRAW/GETEVENT/CLOSE stay owner-only. */
+        win_t *s = win_get(id, self, 0);
         if (s) {
             u32 oy0 = s->y, oy1 = s->y + s->h;
             if (s->w <= w)
@@ -268,6 +277,7 @@ void win_owner_release(task64_t *t) {
             pool_free(wins[i].off, wins[i].w * wins[i].h * 4);
             wins[i].used = 0;
             wins[i].owner = 0;
+            win_focus_drop_locked(i);
             cons_mark_dirty(y0, y0 + wins[i].h);
         }
     }
@@ -276,8 +286,7 @@ void win_owner_release(task64_t *t) {
 
 /* Blend all slots covering display row y (bottom-to-top), called from
  * cons_present() under its lock — never locks. */
-void win_composite_scanline(u32 y, u32 *drow, u32 fb_w) {
-    int i;
+void win_composite_scanline(u32 y, u32 *drow, u32 fb_w) {    int i;
     for (i = 0; i < WIN_MAX; i++) {
         win_t *s = &wins[i];
         u32 x0, x1, x;
@@ -291,4 +300,139 @@ void win_composite_scanline(u32 y, u32 *drow, u32 fb_w) {
         if (x1 > fb_w) x1 = fb_w;
         for (x = x0; x < x1; x++) drow[x] = src[x - x0];
     }
+}
+
+/* ---- D2 input routing ----
+ * Per-slot 64-entry rings: single IRQ writer (BSP-only PIC, IF=0 —
+ * head only), single syscall reader (tail only). No lock either side.
+ * Keyboard goes to the focus slot when one exists (legacy kbd ring
+ * untouched then, so the text shell never sees GUI keystrokes); mouse
+ * hit-tests topmost-first on every packet. */
+
+static int win_focus = -1;
+static int win_hover = -1;
+static u32 win_last_btn = 0;
+
+static void win_ev_push(win_t *s, u32 type, u32 d0, u32 d1, u32 d2) {
+    u8 h, n;
+    if (!s->used) return;
+    h = s->ev_head;
+    n = (u8)((h + 1) & (WIN_EV_N - 1));
+    if (n == s->ev_tail) return; /* full: drop newest */
+    s->ev[h].type = type;
+    s->ev[h].d0 = d0;
+    s->ev[h].d1 = d1;
+    s->ev[h].d2 = d2;
+    s->ev_head = n;
+}
+
+/* Returns 1 when a focus slot consumed the character. */
+int win_route_key(int c) {
+    if (win_focus < 0 || win_focus >= WIN_MAX) return 0;
+    if (!wins[win_focus].used) return 0;
+    win_ev_push(&wins[win_focus], WEV_KEY, (u32)c, 0, 0);
+    return 1;
+}
+
+/* Hit-test topmost slot containing (x,y); -1 for bare desktop. */
+static int win_hit(u32 x, u32 y) {
+    int i;
+    for (i = WIN_MAX - 1; i >= 0; i--) {
+        win_t *s = &wins[i];
+        if (!s->used) continue;
+        if (x >= s->x && x < s->x + s->w && y >= s->y && y < s->y + s->h)
+            return i;
+    }
+    return -1;
+}
+
+void win_route_mouse(u32 x, u32 y, u32 btn) {
+    int hit = win_hit(x, y);
+    if (hit != win_hover) {
+        if (win_hover >= 0 && win_hover < WIN_MAX)
+            win_ev_push(&wins[win_hover], WEV_LEAVE, x, y, 0);
+        if (hit >= 0) win_ev_push(&wins[hit], WEV_ENTER, x, y, 0);
+        win_hover = hit;
+    }
+    if (hit >= 0) win_ev_push(&wins[hit], WEV_MOVE, x, y, 0);
+    if (btn != win_last_btn) {
+        win_last_btn = btn;
+        if (hit >= 0) win_ev_push(&wins[hit], WEV_BTN, x, y, btn);
+    }
+}
+
+long win_focus_set(int id) {
+    u64 f;
+    long ret;
+    if (id < -1 || id >= WIN_MAX) return -22;
+    f = s_lock_hold();
+    ret = 0;
+    if (id >= 0 && !wins[id].used) ret = -22;
+    if (!ret) {
+        if (win_focus >= 0 && win_focus < WIN_MAX && wins[win_focus].used)
+            win_ev_push(&wins[win_focus], WEV_FOCUS, 0, 0, 0);
+        win_focus = id;
+        if (id >= 0) win_ev_push(&wins[id], WEV_FOCUS, 1, 0, 0);
+    }
+    s_lock_drop(f);
+    return ret;
+}
+
+long win_getevent(int id, winev_t *out, int max) {
+    task64_t *self = task64_self();
+    volatile winev_t *o;
+    u64 f;
+    long n = 0;
+    if (!self) return -22;
+    if (id < 0 || id >= WIN_MAX || max < 1 || max > 16) return -22;
+    f = s_lock_hold();
+    if (!wins[id].used || wins[id].owner != self)
+        n = -22;
+    else {
+        o = (volatile winev_t *)out;
+        while (n < max && wins[id].ev_tail != wins[id].ev_head) {
+            winev_t *e = &wins[id].ev[wins[id].ev_tail];
+            o[n].type = e->type;
+            o[n].d0 = e->d0;
+            o[n].d1 = e->d1;
+            o[n].d2 = e->d2;
+            n++;
+            wins[id].ev_tail = (u8)((wins[id].ev_tail + 1) & (WIN_EV_N - 1));
+        }
+    }
+    s_lock_drop(f);
+    return n;
+}
+
+long win_list(wininfo_t *out, int max) {
+    volatile wininfo_t *o;
+    u64 f;
+    long n = 0;
+    int i;
+    if (max < 1 || max > 16) return -22;
+    f = s_lock_hold();
+    o = (volatile wininfo_t *)out;
+    for (i = 0; i < WIN_MAX && n < max; i++) {
+        if (!wins[i].used) continue;
+        o[n].id = (u32)i;
+        o[n].x = wins[i].x;
+        o[n].y = wins[i].y;
+        o[n].w = wins[i].w;
+        o[n].h = wins[i].h;
+        o[n].owner = wins[i].owner ? wins[i].owner->id : -1;
+        for (int k = 0; k < 16; k++) {
+            o[n].title[k] = wins[i].title[k];
+            if (!wins[i].title[k]) break;
+        }
+        n++;
+    }
+    s_lock_drop(f);
+    return n;
+}
+
+/* Clear focus when its slot dies (close + owner-release paths call this
+ * with serial_lock held). */
+static void win_focus_drop_locked(int id) {
+    if (win_focus == id) win_focus = -1;
+    if (win_hover == id) win_hover = -1;
 }

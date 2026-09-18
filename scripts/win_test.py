@@ -114,6 +114,10 @@ def main():
             print("server:", "ready" if ready else "MISS")
             if not ready:
                 return 1
+            term = wait_for(SERIAL, "TERM-READY", 40)
+            print("terminal:", "ready" if term else "MISS")
+            if not term:
+                return 1
             time.sleep(2)
             shot(q, SHOT1)
             px = load_rgb(SHOT1)
@@ -122,10 +126,10 @@ def main():
                       gray_count(px, 194, 170, 830, 190) > 50)
             print(f"layout: {layout}")
             type_open(q, list("hi") + ["ret"])
-            echoed = wait_for(SERIAL, "WIN-LINE hi", 30)
+            echoed = wait_for(SERIAL, "TERM-LINE hi", 30)
             if not echoed:  # open-loop keys can die under boot load; clear
                 type_open(q, ["backspace"] * 5 + list("hi") + ["ret"])
-                echoed = wait_for(SERIAL, "WIN-LINE hi", 30)
+                echoed = wait_for(SERIAL, "TERM-LINE hi", 30)
             # Drag: title starts at (192,150); mouse at (511,383).
             q.hmp("mouse_move 1 -223")
             time.sleep(2)
@@ -153,7 +157,7 @@ def main():
         finally:
             q.close()
         checks = [
-            (ready, "server-ready"),
+            (ready and term, "server-ready"),
             (layout, "layout"),
             (echoed, "terminal-echo"),
             (dragged and moved, "drag"),

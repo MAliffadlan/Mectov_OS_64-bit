@@ -19,7 +19,7 @@
 
 /* ---- embedded registry ---- */
 
-#define NEXECREG 16
+#define NEXECREG 24 /* D2: 17 demos and counting; silent drop above */
 static struct {
     char name[16];
     const u8 *data;
@@ -28,7 +28,10 @@ static struct {
 static int nreg = 0;
 
 void exec_register(const char *name, const void *data, u64 len) {
-    if (nreg >= NEXECREG || !name || !data || !len) return;
+    if (nreg >= NEXECREG || !name || !data || !len) {
+        s_puts("[K64] exec registry full, skipped\n");
+        return;
+    }
     int i = 0;
     for (; i < 15 && name[i]; i++) reg[nreg].name[i] = name[i];
     reg[nreg].name[i] = '\0';

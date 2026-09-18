@@ -130,6 +130,7 @@ void mouse_push(u8 b) {
      * wrapper presents right after, so the cursor tracks in real time. */
     mouse_seq++;
     cons_cursor_moved(ox, oy, mouse_x, mouse_y);
+    win_route_mouse(mouse_x, mouse_y, mouse_btn); /* D2: may be no slots */
 }
 
 /* Packed Ring-3 poll: x | y<<12 | buttons<<24 | seq<<32. Never blocks. */

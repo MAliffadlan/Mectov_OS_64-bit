@@ -133,6 +133,25 @@ u64 syscall64_dispatch(regs64_t *r) {
         ret = 0;
         break;
     }
+    case SYS64_WIN_GETEVENT: {
+        if (c < 1 || c > 16 || !vmm_user_ok(b, c * sizeof(winev_t))) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)(long)win_getevent((int)a, (winev_t *)b, (int)c);
+        break;
+    }
+    case SYS64_WIN_FOCUS:
+        ret = (u64)(long)win_focus_set((int)a);
+        break;
+    case SYS64_WIN_LIST: {
+        if (b < 1 || b > 16 || !vmm_user_ok(a, (u64)b * sizeof(wininfo_t))) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)(long)win_list((wininfo_t *)a, (int)b);
+        break;
+    }
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

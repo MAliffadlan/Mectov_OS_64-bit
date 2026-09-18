@@ -101,6 +101,9 @@ u64 k64_ticks(void);
 #define SYS64_WIN_TEXT 144   /* D1: RBX=id RCX=x RDX=y RSI=ptr RDI=len R8=fg R9=bg */
 #define SYS64_WIN_SETPOS 145 /* D1: RBX=id RCX=x RDX=y -> 0/-errno */
 #define SYS64_WIN_PRESENT 146 /* D1: flush dirty bands -> 0 */
+#define SYS64_WIN_GETEVENT 147 /* D2: RBX=id RCX=ptr RDX=max -> count */
+#define SYS64_WIN_FOCUS 148    /* D2: RBX=id (-1 clears) -> 0/-errno */
+#define SYS64_WIN_LIST 149     /* D2: RBX=ptr RCX=max -> count */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -115,6 +118,21 @@ typedef struct {
 typedef struct {
     u64 addr, pitch, w, h, bpp, size, map_va;
 } fbinfo_t;
+/* D2 window events + listing (kernel + demos/libc, fixed sizes). */
+typedef struct {
+    u32 type, d0, d1, d2;
+} winev_t;
+#define WEV_KEY 1   /* d0=ascii */
+#define WEV_MOVE 2  /* d0=x d1=y */
+#define WEV_BTN 3   /* d0=x d1=y d2=buttons */
+#define WEV_ENTER 4 /* d0=x d1=y */
+#define WEV_LEAVE 5 /* d0=x d1=y */
+#define WEV_FOCUS 6 /* d0=1 gained, 0 lost */
+typedef struct {
+    u32 id, x, y, w, h;
+    int owner;
+    char title[16];
+} wininfo_t;
 #define SYS64_PRINT 1
 #define SYS64_TICKS 8
 #define SYS64_YIELD 9
@@ -178,6 +196,8 @@ int task64_current_id(void);
 task64_t *task64_self(void); /* current TCB (for base/getpid paths) */
 void kbd_init(void);
 void kbd_push(u8 sc);
+int kbd_translate(u8 sc); /* D2: scancode -> ASCII/-1 (vec33 routing) */
+void kbd_push_raw(int c); /* D2: buffer a translated char (legacy path) */
 int kbd_try_get(void);
 void mouse_init(void);   /* G1: PS/2 aux, safe no-op when absent */
 void mouse_push(u8 b);   /* IRQ12 byte (caller holds serial_lock) */
@@ -201,6 +221,12 @@ long win_text(int id, u32 x, u32 y, const char *s, u64 len, u32 fg, u32 bg);
 long win_setpos(int id, u32 x, u32 y);
 void win_owner_release(task64_t *t);
 void win_composite_scanline(u32 y, u32 *drow, u32 fb_w);
+/* D2 input routing (rings are IRQ-writer/syscall-reader SPSC). */
+int win_route_key(int c); /* 1 = consumed by focus, 0 = legacy ring */
+void win_route_mouse(u32 x, u32 y, u32 btn);
+long win_getevent(int id, winev_t *out, int max);
+long win_focus_set(int id);
+long win_list(wininfo_t *out, int max);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

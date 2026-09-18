@@ -38,23 +38,38 @@ static inline u8 kbd_inb(u16 port) {
     return v;
 }
 
-/* Called from the IRQ1 stub (vec 33) with the raw scancode byte. */
-void kbd_push(u8 sc) {
-    if (sc == 0x2A || sc == 0x36) { kbd_shift = 1; return; }       /* shift */
-    if (sc == 0xAA || sc == 0xB6) { kbd_shift = 0; return; }
-    if (sc == 0x3A) { kbd_caps = !kbd_caps; return; }              /* caps */
-    if (sc & 0x80) return;                                        /* release */
-    if (sc >= 128) return;
-    char c = kbd_shift ? kbd_map_shift[sc] : kbd_map[sc];
+/* Translate one scancode byte: ASCII, or -1 for modifiers/releases/
+ * non-printing (shift state updated as a side effect). Lock-free, IRQ-safe;
+ * D2 splits this out so vec33 can route the character to a window slot
+ * instead of the legacy ring when a GUI focus exists. */
+int kbd_translate(u8 sc) {
+    char c;
+    if (sc == 0x2A || sc == 0x36) { kbd_shift = 1; return -1; }    /* shift */
+    if (sc == 0xAA || sc == 0xB6) { kbd_shift = 0; return -1; }
+    if (sc == 0x3A) { kbd_caps = !kbd_caps; return -1; }           /* caps */
+    if (sc & 0x80) return -1;                                     /* release */
+    if (sc >= 128) return -1;
+    c = kbd_shift ? kbd_map_shift[sc] : kbd_map[sc];
     /* CapsLock flips letters only (shift already applied above). */
     if (kbd_caps && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
         c = (char)(c ^ 0x20);
-    if (!c) return;
+    if (!c) return -1;
+    return (unsigned char)c;
+}
+
+/* Buffer one translated character (legacy text-console path). */
+void kbd_push_raw(int c) {
     u8 h = kbd_head;
     u8 n = (u8)(h + 1);
     if (n == kbd_tail) return; /* full: drop oldest? No — drop newest. */
     kbd_buf[h] = (u8)c;
     kbd_head = n;
+}
+
+/* Called from the IRQ1 stub (vec 33) with the raw scancode byte. */
+void kbd_push(u8 sc) {
+    int c = kbd_translate(sc);
+    if (c >= 0) kbd_push_raw(c);
 }
 
 /* Drain any stale bytes (boot firmwaree leftovers). */

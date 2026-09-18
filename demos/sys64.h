@@ -158,6 +158,28 @@ static inline long d_winsetpos(long id, u64 x, u64 y) {
     return sys3(145, (u64)id, x, y);
 }
 static inline long d_winpresent(void) { return sys0(146); }
+/* D2 events + listing (mirror k64/cpu64.h layouts/numbers). */
+typedef struct {
+    u32 type, d0, d1, d2;
+} winev_t;
+#define WEV_KEY 1
+#define WEV_MOVE 2
+#define WEV_BTN 3
+#define WEV_ENTER 4
+#define WEV_LEAVE 5
+#define WEV_FOCUS 6
+typedef struct {
+    u32 id, x, y, w, h;
+    int owner;
+    char title[16];
+} wininfo_t;
+static inline long d_wingetevent(long id, winev_t *e, long max) {
+    return sys3(147, (u64)id, (u64)e, (u64)max);
+}
+static inline long d_winfocus(long id) { return sys1(148, (u64)id); }
+static inline long d_winlist(wininfo_t *w, long max) {
+    return sys2(149, (u64)w, (u64)max);
+}
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

@@ -12,7 +12,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **Preemptive multitasking** — per-CPU runqueues over one task table, COW `fork()`, `clone()`, `exec()` (MCT2/ELF64), `waitpid()` with zombies, `sleep()`, per-task eager FPU state, W^X loader, ASLR for ELF.
 - **Demand paging** — `brk()` heap grows the pointer; pages materialize zero-filled on first touch, with guard-hole and canonical-address enforcement.
 - **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu gui exit`, foreground `run` with real `argc/argv`, `gui` enters the window server.
-- **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, kernel window slots (8×, 8 MB pool) composited bottom-to-top, single-window server (`winsrv`: draggable terminal, keyboard focus).
+- **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, kernel window slots (8×, 8 MB pool) composited bottom-to-top, per-window input rings with focus routing, single-window server (`winsrv`) + separate terminal process (`term`).
 - **Userspace graphics ABI** — `FB_INFO`/`FB_MAP`/`FB_UNMAP` map the display into Ring-3 (UC, single-owner, console auto-yields/restores), bump allocator over `brk`, `gfxdemo` proves direct pixels from userspace.
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
 
@@ -27,7 +27,7 @@ k64/           Kernel: gdt/idt/isr, mem/paging, tasks/sched, syscalls,
                MCT2+ELF64 loader, SMP/LAPIC, PS/2 keyboard, spinlocks
 demos/         Ring-3 programs (MCT2, one ELF64): shell, hello, fpu,
                 clone/fork/exec demos, brk/nx/aslr/smp/meminfo/mouse/gfx tests,
-                winsrv (single-window GUI server)
+                winsrv (single-window GUI server), term (GUI terminal)
 scripts/       build_mct64.py, build_elf64.py, qmp.py, kbd_test.py,
                vga_test.py, mouse_test.py, gfx_test.py, win_test.py,
                stress.py
@@ -81,6 +81,9 @@ make check64            # headless + keyboard + framebuffer + mouse + gfx + win 
 | 144 | WIN_TEXT | id,x,y,ptr,len(≤256),fg,bg |
 | 145 | WIN_SETPOS | id,x,y (clamped) |
 | 146 | WIN_PRESENT | flush dirty bands |
+| 147 | WIN_GETEVENT | id,ptr,max(≤16) -> count (per-window input ring) |
+| 148 | WIN_FOCUS | id (-1 clears) |
+| 149 | WIN_LIST | ptr,max -> count of {id,x,y,w,h,owner,title} |
 
 ## Known issues / future work
 

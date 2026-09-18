@@ -40,8 +40,13 @@ u64 isr64_handler(regs64_t *r) {
     if (v == 33) { /* M7.2 keyboard: buffer scancode, EOI */
         /* G1: consume only a real KBD byte (OBF set, AUX clear). A bare
          * inb would eat a queued AUX byte (mouse misframe) or a stale
-         * value on a spurious IRQ. AUX bytes belong to vec44. */
-        if ((inb(0x64) & 0x21) == 0x01) kbd_push(inb(0x60));
+         * value on a spurious IRQ. AUX bytes belong to vec44.
+         * D2: translated char goes to the focused window when one
+         * exists (GUI owns the keys); else the legacy shell ring. */
+        if ((inb(0x64) & 0x21) == 0x01) {
+            int c = kbd_translate(inb(0x60));
+            if (c >= 0 && !win_route_key(c)) kbd_push_raw(c);
+        }
         EOI_MASTER();
         return (u64)r;
     }
