@@ -138,7 +138,7 @@ clean64:
 clean: clean64
 
 check64: iso64
-	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py && python3 scripts/mouse_test.py && python3 scripts/gfx_test.py && python3 scripts/win_test.py
+	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py && python3 scripts/mouse_test.py && python3 scripts/gfx_test.py && python3 scripts/win_test.py && python3 scripts/gui_test.py
 
 check: check64
 

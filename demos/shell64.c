@@ -107,7 +107,7 @@ void demo_main(void) {
         if (ac == 0) continue;
         if (!s_cmp(av[0], "exit")) return;
         if (!s_cmp(av[0], "help")) {
-            put("help ps run exec ticks mem echo sleep cpu exit");
+            put("help ps run exec ticks mem echo sleep cpu gui exit");
             continue;
         }
         if (!s_cmp(av[0], "ps")) { cmd_ps(); continue; }
@@ -145,6 +145,13 @@ void demo_main(void) {
             continue;
         }
         if (!s_cmp(av[0], "run")) { cmd_run(av + 1, ac - 1); continue; }
+        if (!s_cmp(av[0], "gui")) {
+            /* G4: foreground window server; its `exit` returns here. */
+            char *gav[2] = { "winsrv", 0 };
+            put("entering GUI (exit in the window returns)");
+            cmd_run(gav, 1);
+            continue;
+        }
         if (!s_cmp(av[0], "exec")) {
             if (ac < 2) { put("usage: exec <name>"); continue; }
             d_exec(av[1]);

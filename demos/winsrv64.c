@@ -183,6 +183,8 @@ void args_main(int argc, const char **argv) {
     g_stride = (u32)(fi.pitch / 4);
     term_put("MCT terminal - type help");
     draw_all(mx, my);
+    u64 last_draw = (u64)d_ticks();
+    int pending = 0;
     dl_s(&l, "WIN-READY ");
     dl_u(&l, fi.w);
     dl_s(&l, "x");
@@ -243,7 +245,19 @@ void args_main(int argc, const char **argv) {
                 iline[iline_n++] = (char)k;
             }
         }
-        if (changed) draw_all(mx, my);
+        if (changed || pending) {
+            /* G4 pacing: full redraws at most every 50ms (a drag storm
+             * of packets must not spiral into back-to-back 3MB UC
+             * copies); pending input still flushes within one quantum. */
+            u64 now = (u64)d_ticks();
+            if (now - last_draw >= 5) {
+                draw_all(mx, my);
+                last_draw = now;
+                pending = 0;
+            } else if (changed) {
+                pending = 1;
+            }
+        }
         if (running) d_sleep(2);
     }
     d_fbunmap();

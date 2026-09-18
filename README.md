@@ -11,7 +11,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **True SMP** — INIT-SIPI-SIPI AP bring-up (16→32→64 trampoline), per-CPU TSS/GDT slots, LAPIC + PIT timers, fixed IPIs, TLB-shootdown plumbing, ticket-free spinlocks with strict lock ordering.
 - **Preemptive multitasking** — per-CPU runqueues over one task table, COW `fork()`, `clone()`, `exec()` (MCT2/ELF64), `waitpid()` with zombies, `sleep()`, per-task eager FPU state, W^X loader, ASLR for ELF.
 - **Demand paging** — `brk()` heap grows the pointer; pages materialize zero-filled on first touch, with guard-hole and canonical-address enforcement.
-- **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu exit`, foreground `run` with real `argc/argv`.
+- **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu gui exit`, foreground `run` with real `argc/argv`, `gui` enters the window server.
 - **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, single-window server (`winsrv`: draggable terminal, keyboard focus).
 - **Userspace graphics ABI** — `FB_INFO`/`FB_MAP`/`FB_UNMAP` map the display into Ring-3 (UC, single-owner, console auto-yields/restores), bump allocator over `brk`, `gfxdemo` proves direct pixels from userspace.
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
@@ -41,7 +41,7 @@ Requirements: `gcc (-m64)` · `nasm` · `ld` · `qemu-system-x86_64` · `python3
 make && make iso64      # kernel + bootable ISO
 ./run64.sh              # interactive QEMU
 ./run64.sh --headless   # CI gate: boot + ~40 serial markers, zero faults
-make check64            # headless gate + keyboard gate + framebuffer gate
+make check64            # headless + keyboard + framebuffer + mouse + gfx + win + gui gates
 ```
 
 `run64.sh --headless` asserts the full battery over the serial log: long-mode entry, GDT/IDT, PMM self-test, 4-CPU SMP + IPI/TLB, COW fork isolation with exact values, FPU isolation (SSE+x87), clone, exec (MCT2 + ELF64, ASLR bases distinct), shell/spawn/argv, brk demand paging (64 touched / ~65 frames), NX/RO kills (exit 139), per-CPU worker execution on all 4 cores — with zero `[FATAL]`/`[FAIL]` and no forbidden markers.
