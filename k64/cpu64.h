@@ -106,6 +106,8 @@ u64 k64_ticks(void);
 #define SYS64_WIN_LIST 149     /* D2: RBX=ptr RCX=max -> count */
 #define SYS64_WIN_RAISE 150    /* D3: RBX=id -> topmost -> 0/-errno */
 #define SYS64_REBOOT 151       /* D3: reset via 8042, noreturn */
+#define SYS64_WIN_BLIT 152     /* D4: RBX=id RCX=x RDX=y RSI=w RDI=h R8=ptr */
+#define SYS64_BLOBREAD 153     /* D4: RBX=name RCX=buf RDX=max -> n/-errno */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -231,6 +233,10 @@ long win_focus_set(int id);
 long win_list(wininfo_t *out, int max);
 long win_raise(int id);   /* D3: stacking is server-managed, any task */
 void sys_reboot(void);    /* D3: 8042 reset pulse, noreturn */
+long win_blit(int id, u32 x, u32 y, u32 w, u32 h, const u32 *us); /* D4 */
+/* D4 asset blobs (k64/blob64.c). */
+void blob_register(const char *name, const void *data, u64 len);
+long blob_read(const char *kname, void *dst, u64 maxlen);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

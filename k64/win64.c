@@ -266,6 +266,38 @@ long win_setpos(int id, u32 x, u32 y) {
 
 /* Close every slot owned by an exiting/execing task (mirrors fb64).
  * No locks held by callers; serial only, never nested. */
+/* D4: image blit into a slot (wallpaper/sprites). len == w*h*4 exact,
+ * validated by the caller; clipped to the slot like fill. */
+long win_blit(int id, u32 x, u32 y, u32 w, u32 h, const u32 *us) {
+    task64_t *self = task64_self();
+    volatile const u32 *src = (volatile const u32 *)us;
+    u64 f;
+    long ret;
+    if (!self || !us) return -22;
+    f = s_lock_hold();
+    ret = -22;
+    {
+        win_t *s = win_get(id, self, 1);
+        if (s) {
+            u32 x1 = x + w, y1 = y + h;
+            u32 *base = win_pool + s->off / 4;
+            u32 yy, xx;
+            if (x1 > s->w) x1 = s->w;
+            if (y1 > s->h) y1 = s->h;
+            for (yy = y; yy < y1; yy++) {
+                u32 *dst = base + (u64)yy * s->w;
+                volatile const u32 *srow = src + (u64)(yy - y) * w;
+                for (xx = x; xx < x1; xx++) dst[xx] = srow[xx - x];
+            }
+            if (x < x1 && y < y1)
+                cons_mark_dirty(s->y + y, s->y + y1);
+            ret = 0;
+        }
+    }
+    s_lock_drop(f);
+    return ret;
+}
+
 void win_owner_release(task64_t *t) {
     u64 f;
     int i;

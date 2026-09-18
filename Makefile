@@ -24,7 +24,8 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/k64_loader64.o $(OBJ64_DIR)/k64_smp64.o \
          $(OBJ64_DIR)/k64_kbd64.o $(OBJ64_DIR)/k64_cons64.o \
          $(OBJ64_DIR)/k64_mouse64.o $(OBJ64_DIR)/k64_fb64.o \
-         $(OBJ64_DIR)/k64_win64.o $(OBJ64_DIR)/font8x16.o \
+         $(OBJ64_DIR)/k64_win64.o $(OBJ64_DIR)/k64_blob64.o \
+         $(OBJ64_DIR)/font8x16.o \
          $(OBJ64_DIR)/entry64.o $(OBJ64_DIR)/tramp64_bin.o \
          $(OBJ64_DIR)/hello64_mct.o $(OBJ64_DIR)/fpu64_mct.o \
          $(OBJ64_DIR)/clone64_mct.o $(OBJ64_DIR)/forkdemo64_mct.o \
@@ -34,7 +35,10 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/nxtest64_mct.o $(OBJ64_DIR)/asldemo64_mct.o \
          $(OBJ64_DIR)/smptest64_mct.o $(OBJ64_DIR)/mousedemo64_mct.o \
          $(OBJ64_DIR)/gfxdemo64_mct.o $(OBJ64_DIR)/winsrv64_mct.o \
-         $(OBJ64_DIR)/term64_mct.o
+         $(OBJ64_DIR)/term64_mct.o \
+         $(OBJ64_DIR)/assets_wallpaper_qoi.o \
+         $(OBJ64_DIR)/assets_icon_term_qoi.o \
+         $(OBJ64_DIR)/assets_icon_demo_qoi.o
 
 all: myos64.bin
 
@@ -113,6 +117,16 @@ demos/winsrv64.mct: demos/winsrv64.c demos/sys64.h demos/umalloc.h demos/entry.S
 
 demos/term64.mct: demos/term64.c demos/sys64.h demos/umalloc.h demos/entry.S scripts/build_mct64.py
 	python3 scripts/build_mct64.py demos/term64.c demos/term64.mct 0x4F000000
+
+# --- D4 desktop assets: procedural QOI (mkassets) embedded raw ---
+assets/wallpaper.qoi assets/icon_term.qoi assets/icon_demo.qoi: scripts/mkassets.py
+	python3 scripts/mkassets.py assets/
+$(OBJ64_DIR)/assets_wallpaper_qoi.o: assets/wallpaper.qoi | $(OBJ64_DIR)
+	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 $< $@
+$(OBJ64_DIR)/assets_icon_term_qoi.o: assets/icon_term.qoi | $(OBJ64_DIR)
+	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 $< $@
+$(OBJ64_DIR)/assets_icon_demo_qoi.o: assets/icon_demo.qoi | $(OBJ64_DIR)
+	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 $< $@
 
 demos/execchild64.elf: demos/execchild64.c demos/sys64.h demos/entry.S scripts/build_elf64.py
 	python3 scripts/build_elf64.py demos/execchild64.c demos/execchild64.elf

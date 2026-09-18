@@ -159,6 +159,29 @@ u64 syscall64_dispatch(regs64_t *r) {
         sys_reboot();
         ret = 0;
         break;
+    case SYS64_WIN_BLIT: {
+        u64 len = (u64)(u32)d * (u64)(u32)e * 4;
+        if (!len) { ret = 0; break; }
+        if (len > 262144 || !vmm_user_ok(f, len)) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)(long)win_blit((int)a, (u32)b, (u32)c, (u32)d, (u32)e,
+                                  (const u32 *)f);
+        break;
+    }
+    case SYS64_BLOBREAD: {
+        char kname[17];
+        int i;
+        for (i = 0; i < 16; i++) {
+            kname[i] = ((volatile const char *)a)[i];
+            if (!kname[i]) break;
+        }
+        kname[16] = '\0';
+        if (c && !vmm_user_ok(b, c)) { ret = (u64)(long)-14; break; }
+        ret = (u64)(long)blob_read(kname, (void *)b, c);
+        break;
+    }
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

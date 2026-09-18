@@ -182,6 +182,14 @@ static inline long d_winlist(wininfo_t *w, long max) {
 }
 static inline long d_winraise(long id) { return sys1(150, (u64)id); }
 static inline long d_reboot(void) { return sys0(151); }
+/* D4 blits + asset blobs. */
+static inline long d_winblit(long id, u64 x, u64 y, u64 w, u64 h,
+                             const u32 *px) {
+    return sys6(152, (u64)id, x, y, w, h, (u64)px);
+}
+static inline long d_blobread(const char *name, void *buf, u64 max) {
+    return sys3(153, (u64)name, (u64)buf, max);
+}
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

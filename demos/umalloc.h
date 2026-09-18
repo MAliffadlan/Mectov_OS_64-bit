@@ -28,4 +28,15 @@ static inline void *umalloc(u64 n) {
     return (void *)want;
 }
 
+/* Materialize demand pages (first byte per 4KB): syscall pointer
+ * validation (vmm_user_ok) requires PRESENT pages, but fresh brk growth
+ * only materializes on touch. Call this on any umalloc'd buffer BEFORE
+ * handing it to a syscall that reads/writes it (kernel-side faults
+ * otherwise reach the kill path instead of the demand pager). */
+static inline void umalloc_touch(void *p, u64 n) {
+    volatile unsigned char *b = (volatile unsigned char *)p;
+    u64 i;
+    for (i = 0; i < n; i += 4096) b[i] = b[i];
+}
+
 #endif

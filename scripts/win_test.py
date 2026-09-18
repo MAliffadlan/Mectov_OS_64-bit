@@ -78,12 +78,12 @@ def type_open(q, text):
         time.sleep(0.3)
 
 
-def btn(q, down):
+def btn(q, down, fast=False):
     r = q.cmd("input-send-event", {"events": [{"type": "btn", "data": {
         "down": down, "button": "left"}}]})
     if isinstance(r, dict) and "error" in r:
         raise RuntimeError(f"btn failed: {r['error']}")
-    time.sleep(1)
+    time.sleep(0.3 if fast else 1)
 
 
 def move(q, dx, dy):
@@ -144,10 +144,22 @@ def main():
             time.sleep(2)
             shot(q, SHOT1)
             px = load_rgb(SHOT1)
-            layout = (px[50, 700] == TEAL and px[300, 155] == BLUE and
+            grad = lambda x, y: (10 + 16 * y // 767,
+                                 22 + 21 * y // 767, 40 + 20 * y // 767)
+            layout = (px[50, 700] == grad(50, 700) and
+                      px[300, 155] == BLUE and
                       px[300, 300] == (0, 0, 0) and
                       gray_count(px, 194, 170, 830, 190) > 50)
             print(f"layout: {layout}")
+            # D4 wallpaper: gradient formula + solid panel (visible areas).
+            wall = (px[900, 100] == grad(900, 100) and
+                    px[900, 700] == grad(900, 700) and
+                    px[880, 620] == (136, 34, 34))
+            icons = (px[40, 40] == (16, 16, 16) and
+                     px[30, 33] == (0, 200, 0) and
+                     px[40, 104] == (240, 240, 240) and
+                     px[40, 94] == (0, 120, 215))
+            print(f"wallpaper: {wall}, icons: {icons}")
             type_open(q, list("hi") + ["ret"])
             echoed = wait_for(SERIAL, "TERM-LINE hi", 30)
             if not echoed:  # open-loop keys can die under boot load; clear
@@ -163,10 +175,20 @@ def main():
             dragged = wait_for(SERIAL, "WIN-DRAG 292,200", 30)
             shot(q, SHOT2)
             px2 = load_rgb(SHOT2)
-            moved = (px2[400, 205] == BLUE and px2[300, 155] == TEAL)
+            moved = (px2[400, 205] == BLUE and
+                     px2[300, 155] == (13, 26, 44))  # old title: wallpaper
             print(f"dragged: {dragged}, pixels: {moved}")
-            # Menu: from drag end (612,210) to Start (40,754), CLICK it.
-            move(q, -572, 544)
+            # D4 icon double-click: drag end (612,210) -> term icon (40,40).
+            q.hmp("mouse_move -572 -170")
+            time.sleep(2)
+            mark = fsize(SERIAL)
+            for _ in range(2):
+                btn(q, True, fast=True)
+                btn(q, False, fast=True)
+            icon_term = wait_for(SERIAL, "TERM-READY", 40, since=mark)
+            print("icon launch:", "ready" if icon_term else "MISS")
+            # Menu: from icon (40,40) to Start (40,754), CLICK it.
+            move(q, 0, 714)
             menu1 = press_wait(q, "WIN-MENU open")
             shot(q, SHOTM)
             pxm = load_rgb(SHOTM)
@@ -194,12 +216,15 @@ def main():
         checks = [
             (ready and term, "server-ready"),
             (layout, "layout"),
+            (wall and icons, "wallpaper-icons"),
             (echoed, "terminal-echo"),
             (dragged and moved, "drag"),
+            (icon_term, "icon-launch"),
             (menu1 and menu_px, "menu"),
             (term2, "menu-launch"),
             (menu2 and exited, "menu-exit"),
             (alive > 0.005 and bars, "console-restored"),
+            ("WIN-NOASSET" not in serial, "no-asset-fail"),
             ("FATAL" not in serial, "no-FATAL"),
         ]
         rc = 0

@@ -3,6 +3,7 @@
 *.bin
 *.elf
 *.mct
+*.qoi
 myos.bin
 myos64.bin
 mectov.iso

@@ -6,8 +6,21 @@
  *
  * Runs via shell `run winsrv`, hence args_main. Serial protocol for the
  * gate: WIN-READY, WIN-DRAG x,y, WIN-EXIT, WIN-MENU open/launch markers
- * (terminal lines are TERM-*). */
+ * (terminal lines are TERM-*). D4: wallpaper/icons via QOI (vendored
+ * third_party/qoi.h, umalloc-backed, no stdio). */
 #include "sys64.h"
+#include "umalloc.h"
+
+#define QOI_IMPLEMENTATION
+#define QOI_NO_STDIO
+#define QOI_MALLOC(sz) umalloc(sz)
+#define QOI_FREE(p) ((void)0)
+#define QOI_ZEROARR(a) qoi_zero((a), sizeof(a))
+static void qoi_zero(void *p, unsigned n) {
+    unsigned char *b = (unsigned char *)p;
+    while (n--) *b++ = 0;
+}
+#include "../third_party/qoi.h"
 
 #define SCR_W 1024
 #define SCR_H 768
@@ -35,6 +48,18 @@ static long id_bg = -1, id_bar = -1, menu_id = -1;
 static long drag_id = -1;
 static int drag_x = 0, drag_y = 0, grab_x = 0, grab_y = 0;
 static u64 last_sec = (u64)-1;
+/* D4 assets (decoded once at startup; NULL = fallback flat colors). */
+static u32 *wall_px;
+static unsigned wall_w, wall_h;
+static u32 *icon_px[2];
+static int last_px = -1000, last_py = -1000;
+static u64 last_pt = 0;
+static int last_icon = -1;
+#define ICON_W 48
+#define ICON_TERM_X 16
+#define ICON_TERM_Y 16
+#define ICON_DEMO_X 16
+#define ICON_DEMO_Y 80
 
 static void wfill(long id, int x, int y, int w, int h, u32 rgb) {
     d_winfill(id, (u64)x, (u64)y, (u64)w, (u64)h, (u64)rgb);
@@ -164,8 +189,56 @@ static int menu_action(dline_t *l, int entry) {
     return 1;
 }
 
+/* D4: read a named QOI blob, decode to 0x00RRGGBB pixels (in place).
+ * Returns 0 on any failure (caller falls back to flat colors). */
+static u32 *load_qoi(const char *name, unsigned *w_out, unsigned *h_out) {
+    long sz = d_blobread(name, 0, 0);
+    unsigned char *blob;
+    qoi_desc desc;
+    unsigned char *rgba;
+    u32 *out;
+    unsigned n, i;
+    if (sz <= 0 || sz > 262144) return 0;
+    blob = (unsigned char *)umalloc((u64)sz);
+    if (!blob) return 0;
+    umalloc_touch(blob, (u64)sz); /* demand-materialize for the syscall */
+    if (d_blobread(name, blob, (u64)sz) != sz) return 0;
+    rgba = (unsigned char *)qoi_decode(blob, (int)sz, &desc, 4);
+    if (!rgba || !desc.width || !desc.height) return 0;
+    n = desc.width * desc.height;
+    out = (u32 *)rgba;
+    for (i = 0; i < n; i++)
+        out[i] = ((u32)rgba[i * 4] << 16) | ((u32)rgba[i * 4 + 1] << 8) |
+                 (u32)rgba[i * 4 + 2];
+    *w_out = desc.width;
+    *h_out = desc.height;
+    return out;
+}
+
+static void draw_bg(void) {
+    if (wall_px) {
+        /* Chunked blit (256KB syscall cap): 64-row bands. */
+        for (unsigned y = 0; y < wall_h; y += 64) {
+            unsigned h = (wall_h - y > 64) ? 64 : wall_h - y;
+            d_winblit(id_bg, 0, y, wall_w, h, wall_px + (u64)y * wall_w);
+        }
+    } else {
+        wfill(id_bg, 0, 0, SCR_W, SCR_H, C_BG);
+    }
+    if (icon_px[0]) {
+        for (unsigned y = 0; y < 48; y++)
+            d_winblit(id_bg, ICON_TERM_X, ICON_TERM_Y + y, 48, 1,
+                      icon_px[0] + (u64)y * 48);
+    }
+    if (icon_px[1]) {
+        for (unsigned y = 0; y < 48; y++)
+            d_winblit(id_bg, ICON_DEMO_X, ICON_DEMO_Y + y, 48, 1,
+                      icon_px[1] + (u64)y * 48);
+    }
+}
+
 static void draw_all(wininfo_t *info, long n) {
-    wfill(id_bg, 0, 0, SCR_W, SCR_H, C_BG);
+    draw_bg();
     draw_bar(info, n);
     if (menu_id >= 0) draw_menu();
     d_winpresent();
@@ -247,6 +320,20 @@ void args_main(int argc, const char **argv) {
     }
     d_winsetpos(id_bg, 0, 0);
     d_winsetpos(id_bar, 0, SCR_H - BAR_H);
+    /* D4 assets (failures fall back to flat colors + no icons). */
+    {
+        unsigned iw, ih;
+        wall_px = load_qoi("wallpaper", &wall_w, &wall_h);
+        if (!wall_px || wall_w != SCR_W || wall_h != SCR_H) wall_px = 0;
+        icon_px[0] = load_qoi("icon_term", &iw, &ih);
+        if (!icon_px[0] || iw != 48 || ih != 48) icon_px[0] = 0;
+        icon_px[1] = load_qoi("icon_demo", &iw, &ih);
+        if (!icon_px[1] || iw != 48 || ih != 48) icon_px[1] = 0;
+        if (!wall_px || !icon_px[0] || !icon_px[1]) {
+            dl_s(&l, "WIN-NOASSET");
+            dl_nl(&l);
+        }
+    }
     {
         const char *av[1] = { "term" };
         if (d_spawn("term", 1, av) < 0) {
@@ -342,6 +429,33 @@ void args_main(int argc, const char **argv) {
                                         grab_y -= (int)info[i].y;
                                     }
                             }
+                        } else {
+                            /* Bare desktop: icon double-click launches. */
+                            int icon = -1;
+                            int dxn, dyn;
+                            u64 now = (u64)d_ticks();
+                            if ((int)nx >= ICON_TERM_X &&
+                                (int)nx < ICON_TERM_X + ICON_W &&
+                                (int)ny >= ICON_TERM_Y &&
+                                (int)ny < ICON_TERM_Y + ICON_W)
+                                icon = 0;
+                            else if ((int)nx >= ICON_DEMO_X &&
+                                     (int)nx < ICON_DEMO_X + ICON_W &&
+                                     (int)ny >= ICON_DEMO_Y &&
+                                     (int)ny < ICON_DEMO_Y + ICON_W)
+                                icon = 1;
+                            dxn = (int)nx - last_px;
+                            if (dxn < 0) dxn = -dxn;
+                            dyn = (int)ny - last_py;
+                            if (dyn < 0) dyn = -dyn;
+                            if (icon >= 0 && icon == last_icon &&
+                                dxn < 30 && dyn < 30 &&
+                                now - last_pt < 200)
+                                menu_action(&l, icon);
+                            last_icon = icon;
+                            last_px = (int)nx;
+                            last_py = (int)ny;
+                            last_pt = now;
                         }
                     }
                 }

@@ -434,6 +434,24 @@ void kernel64_main(u64 magic, u64 mb_info) {
     REG("winsrv", winsrv64_mct);
     REG("term", term64_mct);
 #undef REG
+    /* D4 desktop assets (raw QOI via objcopy, read-only data blobs). */
+    {
+        extern char _binary_assets_wallpaper_qoi_start[];
+        extern char _binary_assets_wallpaper_qoi_end[];
+        extern char _binary_assets_icon_term_qoi_start[];
+        extern char _binary_assets_icon_term_qoi_end[];
+        extern char _binary_assets_icon_demo_qoi_start[];
+        extern char _binary_assets_icon_demo_qoi_end[];
+        blob_register("wallpaper", _binary_assets_wallpaper_qoi_start,
+                      (u64)(_binary_assets_wallpaper_qoi_end -
+                            _binary_assets_wallpaper_qoi_start));
+        blob_register("icon_term", _binary_assets_icon_term_qoi_start,
+                      (u64)(_binary_assets_icon_term_qoi_end -
+                            _binary_assets_icon_term_qoi_start));
+        blob_register("icon_demo", _binary_assets_icon_demo_qoi_start,
+                      (u64)(_binary_assets_icon_demo_qoi_end -
+                            _binary_assets_icon_demo_qoi_start));
+    }
     task64_init();
     int dh = task64_spawn_image("hello");
     int df = task64_spawn_image("fpu");

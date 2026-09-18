@@ -86,7 +86,7 @@ def main():
             time.sleep(2)
             shot(q, SHOT1)
             px = load_rgb(SHOT1)
-            gui = (px[50, 700] == (26, 43, 60) and
+            gui = (px[50, 700] == (24, 41, 58) and  # D4 wallpaper gradient
                    px[300, 155] == (0, 0, 128))
             print(f"gui screen: {gui}")
             # winsrv draws keys instead of echoing: open-loop exit.
