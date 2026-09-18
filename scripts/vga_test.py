@@ -8,7 +8,8 @@ the shell prompt, dumps the VGA framebuffer twice (before/after typing
 Checks: screen alive (>0.5% non-black pixels), no column-0 cursor strands
 (the cons_putc '\\r' regression: at most 1 full-block cell in column 0,
 the live cursor itself), typing `help` changes the frame, serial shows
-the help text (screen/serial dual sink in sync), no FATAL.
+the help text (screen/serial dual sink in sync), G0 status strip intact
+(RGB bars + background + moving tick progress bar), no FATAL.
 """
 import os
 import subprocess
@@ -25,7 +26,8 @@ SOCK = "/tmp/qmp_vgatest"
 SHOT1 = "/tmp/shot_vga1.ppm"
 SHOT2 = "/tmp/shot_vga2.ppm"
 
-NCOLS, NROWS = 128, 48  # 1024x768 @ 8x16 cells
+NCOLS, NROWS = 128, 47  # 1024x768: 47 text rows + 16px status strip
+STRIP_Y = NROWS * 16 + 8  # mid-strip sample line (y=760)
 
 
 def boot():
@@ -67,18 +69,23 @@ def shot(q, path):
     raise RuntimeError("screendump file missing")
 
 
-def load_gray(path):
+def load_rgb(path):
     from PIL import Image
-    im = Image.open(path).convert("L")
+    im = Image.open(path).convert("RGB")
     if im.size != (1024, 768):
         raise ValueError(f"unexpected shot size {im.size}")
     return im.load()
 
 
+def lum(px, x, y):
+    r, g, b = px[x, y]
+    return (r + g + b) // 3
+
+
 def fg_ratio(px):
-    n = sum(1 for y in range(0, 768, 2) for x in range(0, 1024, 2)
-            if px[x, y] > 30)
-    return n / (512 * 384)
+    n = sum(1 for y in range(0, 752, 2) for x in range(0, 1024, 2)
+            if lum(px, x, y) > 30)
+    return n / (512 * 376)
 
 
 def col0_blocks(px):
@@ -88,7 +95,7 @@ def col0_blocks(px):
     bad = []
     for cy in range(NROWS):
         n = sum(1 for dy in range(16) for dx in range(8)
-                if px[dx, cy * 16 + dy] > 30)
+                if lum(px, dx, cy * 16 + dy) > 30)
         if n >= 120:
             bad.append(cy)
     return bad
@@ -96,8 +103,25 @@ def col0_blocks(px):
 
 def frame_diff(a, b):
     n = sum(1 for y in range(0, 768, 3) for x in range(0, 1024, 3)
-            if abs(a[x, y] - b[x, y]) > 30)
+            if abs(lum(a, x, y) - lum(b, x, y)) > 30)
     return n / (342 * 256)
+
+
+def progress_width(px):
+    """Width of the green tick progress run starting at x=288."""
+    w = 0
+    while w < 384 and px[288 + w, STRIP_Y] == (0, 255, 0):
+        w += 1
+    return w
+
+
+def strip_bars_ok(px):
+    """G0 strip layout: bg dark blue, R/G/B bars at x 64/128/192."""
+    return (px[96, STRIP_Y] == (255, 0, 0) and
+            px[160, STRIP_Y] == (0, 255, 0) and
+            px[224, STRIP_Y] == (0, 0, 255) and
+            px[40, STRIP_Y] == (0, 0, 128) and
+            px[900, STRIP_Y] == (0, 0, 128))
 
 
 def main():
@@ -113,20 +137,32 @@ def main():
         try:
             time.sleep(3)  # let pending output flush
             shot(q, SHOT1)
-            px1 = load_gray(SHOT1)
+            px1 = load_rgb(SHOT1)
             alive = fg_ratio(px1)
             print(f"screen alive: {alive * 100:.2f}% non-black")
             strands = col0_blocks(px1)
             print(f"col0 full-block rows: "
                   f"{strands if strands else 'none (live cursor elsewhere)'}")
+            bars1 = strip_bars_ok(px1)
+            print(f"strip bars: {'ok' if bars1 else 'MISMATCH'}")
+            prog1 = progress_width(px1)
+            print(f"strip progress: {prog1}px")
             ok_type = type_line(q, SERIAL, list("help") + ["ret"])
             print("type-help:", "ok" if ok_type else "MISS")
             helped = wait_for(SERIAL, "help ps run exec", 60)
             time.sleep(3)
             shot(q, SHOT2)
-            px2 = load_gray(SHOT2)
+            px2 = load_rgb(SHOT2)
             diff = frame_diff(px1, px2)
             print(f"frame change after help: {diff * 100:.2f}%")
+            prog2 = progress_width(px2)
+            if prog2 == prog1:
+                # 10s progress period can alias; one retry settles it.
+                time.sleep(4)
+                shot(q, SHOT2)
+                px2 = load_rgb(SHOT2)
+                prog2 = progress_width(px2)
+            print(f"strip progress: {prog1}px -> {prog2}px")
             serial = open(SERIAL, errors="replace").read()
         finally:
             q.close()
@@ -136,6 +172,8 @@ def main():
             (ok_type, "typing"),
             (helped, "help-output-serial"),
             (diff > 0.0005, "frame-changed"),
+            (bars1, "strip-bars"),
+            (prog2 != prog1, "strip-progress-live"),
             ("FATAL" not in serial, "no-FATAL"),
         ]
         rc = 0

@@ -90,7 +90,8 @@ void trace_cr3_dump(void) {
  *  - PMM: 4KB frames, static 128KB bitmap (1M frames = 4GB), first-free
  *    scan. All frames start reserved; usable Multiboot2 ranges free them.
  *    [0,2MB) stays reserved wholesale (BIOS/GRUB/kernel/tables/stacks/MB
- *    info all live there — M4/M7 can tighten this to _kernel_end).
+ *    info all live there); G0 extends the floor to _kernel_end so the
+ *    console backbuffer in kernel .bss is never handed out as frames.
  *  - Identity: low RAM mapped 1:1 with 2MB large pages (extends the boot
  *    tables in place — no CR3 switch while running, then one CR3 reload to
  *    flush the TLB). The framebuffer gets PCD|PWT|NX 2MB pages; a 2MB page
@@ -742,12 +743,18 @@ void mem64_init(u64 mb_info) {
     for (u64 i = 0; i < PMM_MAX_FRAMES / 64; i++) pmm_bits[i] = ~0ULL;
     pmm_total = 0;
     pmm_free_n = 0;
+    /* G0: reserve the whole kernel image (console backbuffer lives in
+     * .bss past 2MB), not just [0,2MB). */
+    extern char _kernel_end[];
+    u64 reserve_top = RESERVE_TOP;
+    u64 img_top = ((u64)_kernel_end + PAGE4K - 1) & ~(PAGE4K - 1);
+    if (img_top > reserve_top) reserve_top = img_top;
     for (int r = 0; r < nranges; r++) {
         u64 base = ranges[r].base, len = ranges[r].len;
         u64 first = (base + PAGE4K - 1) / PAGE4K;
         u64 last = (base + len) / PAGE4K; /* exclusive */
-        if (first * PAGE4K < RESERVE_TOP)
-            first = RESERVE_TOP / PAGE4K;
+        if (first * PAGE4K < reserve_top)
+            first = reserve_top / PAGE4K;
         for (u64 f = first; f < last; f++) pmm_mark(f, 0);
     }
     /* Re-reserve a low framebuffer sitting inside RAM (mirrors the 32-bit

@@ -1,22 +1,40 @@
-/* VGA-1 framebuffer text console: 8x16 glyphs blitted straight to a
- * 32bpp linear framebuffer (UC-mapped by mem64 pass 5, so plain volatile
- * stores are correct). No double buffering yet — minor tearing on scroll
- * is accepted for this milestone (noted in README).
+/* G0 framebuffer console: everything draws into a 4MB static backbuffer
+ * (kernel .bss — PMM reserves the whole image to _kernel_end, and the
+ * identity map covers it), then cons_present() copies only dirty scanline
+ * bands to the UC framebuffer. Per-char present cost is one 16-row band,
+ * not a 3MB copy; scrolls flush the text area.
  *
- * Called only under serial_lock (see cons64.h), so no SMP races here. */
+ * Bottom 16px is a persistent status strip (never scrolled): G0 tag, RGB
+ * bars, and a tick progress bar redrawn lazily on the next present after
+ * cons_status_tick(). Text grid is therefore rows = height/16 - 1.
+ *
+ * Called only under serial_lock (see cons64.h), so no SMP races here.
+ * cons_status_tick() is the exception: a lock-free u32 store from IRQ. */
 #include "cons64.h"
 #include "font8x16.h"
 
 #define CONS_FG_DEF 0x00BBBBBBUL /* light gray text */
 #define CONS_BG_DEF 0x00000000UL /* black */
+#define CONS_BB_BYTES (4UL * 1024 * 1024) /* static backbuffer cap */
+#define CONS_STRIP_BG 0x00000080UL /* dark blue status strip */
 
 static volatile u32 *fb = 0;
+static u32 cons_bb[CONS_BB_BYTES / 4]; /* draw target; flushed by present */
 static u32 fb_stride = 0; /* u32 pixels per scanline (pitch/4) */
 static u32 fb_w = 0, fb_h = 0;
-static u32 ncols = 0, nrows = 0;
+static u32 ncols = 0, nrows = 0; /* nrows = TEXT rows; strip below them */
 static u32 cur_x = 0, cur_y = 0;
 static u32 fg_color = CONS_FG_DEF;
 static int live = 0;
+
+/* Dirty pixel-row band [dirty_y0, dirty_y1); empty when y0 >= y1. */
+static u32 dirty_y0 = 0, dirty_y1 = 0;
+
+static void mark_dirty(u32 y0, u32 y1) {
+    if (y0 >= y1) return;
+    if (y0 < dirty_y0) dirty_y0 = y0;
+    if (y1 > dirty_y1) dirty_y1 = y1;
+}
 
 int cons_live(void) {
     return live;
@@ -31,9 +49,10 @@ static void cell_draw(u32 cx, u32 cy, unsigned char c, u32 fg, u32 bg) {
             if (px + col >= fb_w) break;
             /* Row bit 7 = leftmost pixel. */
             u32 on = (bits >> (7 - col)) & 1;
-            fb[(py + row) * fb_stride + px + col] = on ? fg : bg;
+            cons_bb[(py + row) * fb_stride + px + col] = on ? fg : bg;
         }
     }
+    mark_dirty(py, py + 16);
 }
 
 /* The block cursor is just pixels: remember where it was painted so it
@@ -54,9 +73,10 @@ static void cursor_erase(void) {
         if (py + row >= fb_h) break;
         for (u32 col = 0; col < 8; col++) {
             if (px + col >= fb_w) break;
-            fb[(py + row) * fb_stride + px + col] = CONS_BG_DEF;
+            cons_bb[(py + row) * fb_stride + px + col] = CONS_BG_DEF;
         }
     }
+    mark_dirty(py, py + 16);
     cur_shown = 0;
 }
 
@@ -66,25 +86,28 @@ static void cursor_draw(void) {
         if (py + row >= fb_h) break;
         for (u32 col = 0; col < 8; col++) {
             if (px + col >= fb_w) break;
-            fb[(py + row) * fb_stride + px + col] = fg_color;
+            cons_bb[(py + row) * fb_stride + px + col] = fg_color;
         }
     }
+    mark_dirty(py, py + 16);
     cur_dx = cur_x;
     cur_dy = cur_y;
     cur_shown = 1;
 }
 
 static void scroll_up(void) {
-    /* Move every pixel row up by one glyph row; clear the last band. */
-    for (u32 y = 0; y + 16 < fb_h; y++) {
-        volatile u32 *dst = fb + (u64)y * fb_stride;
-        volatile u32 *src = fb + (u64)(y + 16) * fb_stride;
+    /* Text area only: the status strip below nrows*16 never moves. */
+    u32 text_h = nrows * 16;
+    for (u32 y = 0; y + 16 < text_h; y++) {
+        u32 *dst = cons_bb + (u64)y * fb_stride;
+        u32 *src = cons_bb + (u64)(y + 16) * fb_stride;
         for (u32 x = 0; x < fb_w; x++) dst[x] = src[x];
     }
-    for (u32 y = fb_h - 16; y < fb_h; y++) {
-        volatile u32 *dst = fb + (u64)y * fb_stride;
+    for (u32 y = text_h - 16; y < text_h; y++) {
+        u32 *dst = cons_bb + (u64)y * fb_stride;
         for (u32 x = 0; x < fb_w; x++) dst[x] = CONS_BG_DEF;
     }
+    mark_dirty(0, text_h);
 }
 
 static void newline(void) {
@@ -98,15 +121,112 @@ static void newline(void) {
 
 void cons_clear(void) {
     if (!live) return;
-    for (u64 i = 0; i < (u64)fb_h * fb_stride; i++) fb[i] = CONS_BG_DEF;
+    for (u64 i = 0; i < (u64)fb_h * fb_stride; i++) cons_bb[i] = CONS_BG_DEF;
+    mark_dirty(0, fb_h);
     cur_shown = 0; /* wipe took down any block with everything else */
     cur_x = 0;
     cur_y = 0;
     cursor_draw();
+    cons_present();
 }
 
 void cons_set_fg(u32 rgb) {
     fg_color = rgb & 0x00FFFFFFUL;
+}
+
+/* ---- G0: status strip + 2D primitives + present ----
+ * Primitives draw into the backbuffer and mark dirty WITHOUT presenting,
+ * so callers can batch shapes and flush once with cons_present(). The
+ * text paths (putc/puts/clear) present internally. */
+
+/* Tick value the strip should reflect; lock-free u32 store from timer. */
+static u32 status_want = 0, status_drawn = 0;
+
+void cons_status_tick(u32 t) {
+    status_want = t; /* aligned u32 store: atomic on x86, no lock needed */
+}
+
+static void fill_rect(u32 x, u32 y, u32 w, u32 h, u32 rgb) {
+    u32 x1, y1;
+    if (x >= fb_w || y >= fb_h) return;
+    x1 = x + w;
+    y1 = y + h;
+    if (x1 > fb_w) x1 = fb_w;
+    if (y1 > fb_h) y1 = fb_h;
+    for (u32 yy = y; yy < y1; yy++) {
+        u32 *dst = cons_bb + (u64)yy * fb_stride;
+        for (u32 xx = x; xx < x1; xx++) dst[xx] = rgb;
+    }
+    mark_dirty(y, y1);
+}
+
+/* Persistent strip redraw: G0 tag, RGB bars, tick progress bar. Runs on
+ * the next present after cons_status_tick() (lazy: zero timer-IRQ cost,
+ * piggybacks the 1Hz tick log that already holds serial_lock). */
+static void status_redraw(void) {
+    u32 y0 = nrows * 16;
+    u32 prog;
+    fill_rect(0, y0, fb_w, 16, CONS_STRIP_BG);
+    cell_draw(0, nrows, 'G', 0x00FFFFFFUL, CONS_STRIP_BG);
+    cell_draw(1, nrows, '0', 0x00FFFFFFUL, CONS_STRIP_BG);
+    fill_rect(64, y0, 64, 16, 0x00FF0000UL);
+    fill_rect(128, y0, 64, 16, 0x0000FF00UL);
+    fill_rect(192, y0, 64, 16, 0x000000FFUL);
+    prog = (status_want % 1000) * 384 / 1000;
+    if (prog) fill_rect(288, y0, prog, 16, 0x0000FF00UL);
+}
+
+void cons_pixel(u32 x, u32 y, u32 rgb) {
+    if (!live) return;
+    if (x >= fb_w || y >= fb_h) return;
+    cons_bb[(u64)y * fb_stride + x] = rgb;
+    mark_dirty(y, y + 1);
+}
+
+void cons_fill(u32 x, u32 y, u32 w, u32 h, u32 rgb) {
+    if (!live) return;
+    fill_rect(x, y, w, h, rgb);
+}
+
+void cons_blit(u32 x, u32 y, u32 w, u32 h, const u32 *px) {
+    u32 x1, y1;
+    if (!live || !px) return;
+    if (x >= fb_w || y >= fb_h) return;
+    x1 = x + w;
+    y1 = y + h;
+    if (x1 > fb_w) x1 = fb_w;
+    if (y1 > fb_h) y1 = fb_h;
+    for (u32 yy = y; yy < y1; yy++) {
+        u32 *dst = cons_bb + (u64)yy * fb_stride;
+        const u32 *src = px + (u64)(yy - y) * w;
+        for (u32 xx = x; xx < x1; xx++) dst[xx] = src[xx - x];
+    }
+    mark_dirty(y, y1);
+}
+
+void cons_dims(u32 *w, u32 *h) {
+    if (w) *w = fb_w;
+    if (h) *h = fb_h;
+}
+
+void cons_present(void) {
+    u32 y0, y1;
+    if (!live) return;
+    if (status_want != status_drawn) {
+        status_redraw();
+        status_drawn = status_want;
+    }
+    y0 = dirty_y0;
+    y1 = dirty_y1;
+    dirty_y0 = fb_h;
+    dirty_y1 = 0;
+    if (y0 >= y1 || y0 >= fb_h) return;
+    if (y1 > fb_h) y1 = fb_h;
+    for (u32 y = y0; y < y1; y++) {
+        volatile u32 *d = fb + (u64)y * fb_stride;
+        u32 *s = cons_bb + (u64)y * fb_stride;
+        for (u32 x = 0; x < fb_w; x++) d[x] = s[x];
+    }
 }
 
 void cons_putc(char c) {
@@ -132,6 +252,7 @@ void cons_putc(char c) {
             cur_x = ncols - 1;
         } else {
             cursor_draw();
+            cons_present();
             return;
         }
         cell_draw(cur_x, cur_y, ' ', fg_color, CONS_BG_DEF);
@@ -149,6 +270,7 @@ void cons_putc(char c) {
         if (cur_x >= ncols) newline();
     }
     cursor_draw();
+    cons_present();
 }
 
 void cons_puts(const char *s) {
@@ -175,7 +297,7 @@ void cons_puts(const char *s) {
                 for (u32 col = 0; col < 8; col++) {
                     if (px + col >= fb_w) break;
                     u32 on = (bits_row[row] >> (7 - col)) & 1;
-                    fb[(py + row) * fb_stride + px + col] =
+                    cons_bb[(py + row) * fb_stride + px + col] =
                         on ? fg_color : CONS_BG_DEF;
                 }
             }
@@ -186,15 +308,19 @@ void cons_puts(const char *s) {
          * cons_putc covers them for single-char callers. */
     }
     cursor_draw();
+    cons_present();
 }
 
 int cons_init(u64 addr, u32 pitch, u32 w, u32 h, u32 bpp) {
     /* Validate before touching anything: 32bpp linear only, sane bounded
      * geometry, framebuffer window under 64MB (refuse wild values that
-     * would walk off into RAM on a stuck pitch). */
+     * would walk off into RAM on a stuck pitch). The backbuffer is a 4MB
+     * static: bigger modes fall back to serial-only. Bottom 16px is the
+     * status strip, so at least 2 text rows of height are required. */
     if (!addr || bpp != 32 || !w || !h || w > 4096 || h > 4096) return 0;
     if (pitch < w * 4 || pitch > 16384) return 0;
     if ((u64)h * pitch > 64ULL * 1024 * 1024) return 0;
+    if ((u64)h * pitch > sizeof(cons_bb)) return 0;
     if (!vmm_is_canonical(addr)) return 0;
     fb = (volatile u32 *)addr;
     fb_stride = pitch / 4;
@@ -202,9 +328,11 @@ int cons_init(u64 addr, u32 pitch, u32 w, u32 h, u32 bpp) {
     fb_h = h;
     ncols = w / 8;
     nrows = h / 16;
-    if (!ncols || !nrows) return 0;
+    if (ncols < 1 || nrows < 2) return 0;
+    nrows--; /* last 16px: persistent status strip, never scrolled */
     fg_color = CONS_FG_DEF;
     live = 1;
+    status_drawn = 0xFFFFFFFF; /* force strip paint on first present */
     cons_clear();
     return 1;
 }

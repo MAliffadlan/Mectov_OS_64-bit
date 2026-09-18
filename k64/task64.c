@@ -19,6 +19,7 @@
  */
 #include "cpu64.h"
 #include "spin64.h"
+#include "cons64.h"
 
 #define NTASK 32
 #define KSTACK_SIZE 16384
@@ -770,6 +771,9 @@ u64 task64_on_tick(regs64_t *r) {
         s_puts("[K64] tick ");
         s_dec64(ticks);
         s_puts("\n");
+        /* G0: status strip redraw is lazy (next present), so this IRQ
+         * only records the tick value — no drawing under timer here. */
+        cons_status_tick((u32)ticks);
     }
     u64 f = SCHED_LOCK();
     for (int i = 1; i < NTASK; i++) {

@@ -12,6 +12,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **Preemptive multitasking** — per-CPU runqueues over one task table, COW `fork()`, `clone()`, `exec()` (MCT2/ELF64), `waitpid()` with zombies, `sleep()`, per-task eager FPU state, W^X loader, ASLR for ELF.
 - **Demand paging** — `brk()` heap grows the pointer; pages materialize zero-filled on first touch, with guard-hole and canonical-address enforcement.
 - **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu exit`, foreground `run` with real `argc/argv`.
+- **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives; no mouse/GUI yet.
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
 
 ## Layout
@@ -25,7 +26,8 @@ k64/           Kernel: gdt/idt/isr, mem/paging, tasks/sched, syscalls,
                MCT2+ELF64 loader, SMP/LAPIC, PS/2 keyboard, spinlocks
 demos/         Ring-3 programs (MCT2, one ELF64): shell, hello, fpu,
                clone/fork/exec demos, brk/nx/aslr/smp/meminfo tests
-scripts/       build_mct64.py, build_elf64.py, qmp.py, kbd_test.py
+scripts/       build_mct64.py, build_elf64.py, qmp.py, kbd_test.py,
+               vga_test.py, stress.py
 ```
 
 ## Build, run, test
@@ -36,7 +38,7 @@ Requirements: `gcc (-m64)` · `nasm` · `ld` · `qemu-system-x86_64` · `python3
 make && make iso64      # kernel + bootable ISO
 ./run64.sh              # interactive QEMU
 ./run64.sh --headless   # CI gate: boot + ~40 serial markers, zero faults
-make check64            # headless gate + interactive keyboard gate
+make check64            # headless gate + keyboard gate + framebuffer gate
 ```
 
 `run64.sh --headless` asserts the full battery over the serial log: long-mode entry, GDT/IDT, PMM self-test, 4-CPU SMP + IPI/TLB, COW fork isolation with exact values, FPU isolation (SSE+x87), clone, exec (MCT2 + ELF64, ASLR bases distinct), shell/spawn/argv, brk demand paging (64 touched / ~65 frames), NX/RO kills (exit 139), per-CPU worker execution on all 4 cores — with zero `[FATAL]`/`[FAIL]` and no forbidden markers.
