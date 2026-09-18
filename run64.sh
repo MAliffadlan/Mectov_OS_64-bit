@@ -19,8 +19,18 @@ echo "[*] Building mectov64.iso (multiboot2)..."
 make iso64 MECTOV64_CMDLINE="${MECTOV64_CMDLINE:-}" || { echo "[-] iso64 failed"; exit 1; }
 rm -f serial64.log
 
+# F2a: every boot gets the ext2 disk (formatted; zeros + warn if host
+# tools are missing — then FS features gracefully report NODISK).
+if [ ! -f disk.img ]; then
+    python3 scripts/mkfsdisk.py disk.img || {
+        echo "[!] mkfsdisk failed (need mkfs.ext2+debugfs); zero image"
+        python3 -c "open('disk.img','wb').write(bytes(16*1024*1024))"
+    }
+fi
+
 QEMU_ARGS=(-machine q35 -m "$MEM" -smp "$SMP"
     -vga std -cdrom mectov64.iso
+    -drive file=disk.img,format=raw
     -serial file:serial64.log
     -no-reboot)
 # P1: KVM when available (same rule as the QMP gates); TCG otherwise.

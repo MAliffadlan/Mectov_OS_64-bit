@@ -196,6 +196,14 @@ static inline long d_winblit(long id, u64 x, u64 y, u64 w, u64 h,
 static inline long d_blobread(const char *name, void *buf, u64 max) {
     return sys3(153, (u64)name, (u64)buf, max);
 }
+/* F2a directory listing (mirror k64/cpu64.h layout). */
+typedef struct {
+    u32 ino, type;
+    char name[64];
+} fsdirent_t;
+static inline long d_readdir(const char *path, fsdirent_t *buf, long max) {
+    return sys3(159, (u64)path, (u64)buf, (u64)max);
+}
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

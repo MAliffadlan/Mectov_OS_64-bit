@@ -182,6 +182,63 @@ u64 syscall64_dispatch(regs64_t *r) {
         ret = (u64)(long)blob_read(kname, (void *)b, c);
         break;
     }
+    case SYS64_READDIR: {
+        /* F2a path-based listing (no fd table yet): fill up to `max`
+         * fsdirent_t (72B each). Path bounded like SPAWN names. */
+        char kpath[256];
+        int i, n = 0;
+        u32 ino;
+        int is_dir;
+        u32 size;
+        for (i = 0; i < 255; i++) {
+            kpath[i] = ((volatile const char *)a)[i];
+            if (!kpath[i]) break;
+        }
+        if (i == 255) { ret = (u64)(long)-22; break; }
+        kpath[255] = '\0';
+        if (!b || !c || c > 64 || !vmm_user_ok(b, c * sizeof(fsdirent_t))) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        {
+            int lrc = ex_lookup(kpath, &ino, &is_dir, &size);
+            if (lrc) {
+                ret = (u64)(long)-2;
+                break;
+            }
+        }
+        if (!is_dir) {
+            ret = (u64)(long)-20;
+            break;
+        }
+        {
+            volatile fsdirent_t *o = (volatile fsdirent_t *)b;
+            u32 idx = 0;
+            long err = 0;
+            for (;;) {
+                u32 ei;
+                int ed;
+                char en[64];
+                int r = ex_readdir_ino(ino, idx, &ei, &ed, en);
+                if (r < 0) {
+                    err = r;
+                    break;
+                }
+                if (r == 0) break;
+                if ((u64)n >= c) break;
+                o[n].ino = ei;
+                o[n].type = ed ? 2 : 1;
+                for (i = 0; i < 64; i++) {
+                    o[n].name[i] = en[i];
+                    if (!en[i]) break;
+                }
+                n++;
+                idx++;
+            }
+            ret = err ? (u64)(long)err : (u64)n;
+        }
+        break;
+    }
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

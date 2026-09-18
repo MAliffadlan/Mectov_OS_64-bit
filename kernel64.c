@@ -486,6 +486,8 @@ void kernel64_main(u64 magic, u64 mb_info) {
     extern char _binary_demos_winsrv64_mct_end[];
     extern char _binary_demos_term64_mct_start[];
     extern char _binary_demos_term64_mct_end[];
+    extern char _binary_demos_fsdemo64_mct_start[];
+    extern char _binary_demos_fsdemo64_mct_end[];
 #define REG(n_, s_)                                                     \
     exec_register(n_, _binary_demos_##s_##_start,                        \
                   (u64)(_binary_demos_##s_##_end - _binary_demos_##s_##_start))
@@ -506,6 +508,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
     REG("gfxdemo", gfxdemo64_mct);
     REG("winsrv", winsrv64_mct);
     REG("term", term64_mct);
+    REG("fsdemo", fsdemo64_mct);
 #undef REG
     /* D4 desktop assets (raw QOI via objcopy, read-only data blobs). */
     {
@@ -548,8 +551,9 @@ void kernel64_main(u64 magic, u64 mb_info) {
     int dnx = task64_spawn_image("nxtest");
     int das = task64_spawn_image("asldemo");
     int dsm = task64_spawn_image("smptest");
+    int dfs = task64_spawn_image("fsdemo");
     if (dh < 0 || df < 0 || dc < 0 || dfk < 0 || de < 0 || dsh < 0 ||
-        dst < 0 || dbr < 0 || dnx < 0 || das < 0 || dsm < 0) {
+        dst < 0 || dbr < 0 || dnx < 0 || das < 0 || dsm < 0 || dfs < 0) {
         s_puts("[K64] FAIL: demo spawn broke\n");
         for (;;) __asm__ __volatile__("cli; hlt");
     }
@@ -579,6 +583,44 @@ void kernel64_main(u64 magic, u64 mb_info) {
             s_hex64((u64)probe[510] | ((u64)probe[511] << 8));
         }
         s_puts("\n");
+    }
+    /* F2a: mount ext2 (graceful without a formatted disk) + data-path
+     * selftest (hello content, indirect size, missing entry). */
+    {
+        int mrc = ex_mount(AHCI64_DRIVE_BASE);
+        if (mrc) {
+            s_puts("[FS] no ext2 volume\n");
+        } else {
+            static u8 fsb[64];
+            u32 ino = 0;
+            int is_dir = 0;
+            u32 size = 0;
+            long got;
+            if (ex_lookup("/hello.txt", &ino, &is_dir, &size) == 0 &&
+                !is_dir && size == 16) {
+                got = ex_read_ino(ino, 0, fsb, 16);
+                if (got == 16 && fsb[0] == 'h' && fsb[15] == '\n')
+                    s_puts("[FS] selftest hello OK\n");
+                else
+                    s_puts("[FS] selftest hello MISMATCH\n");
+            } else {
+                s_puts("[FS] selftest hello MISSING\n");
+            }
+            if (ex_lookup("/big.bin", &ino, &is_dir, &size) == 0 &&
+                !is_dir && size == 40960) {
+                got = ex_read_ino(ino, 40959, fsb, 1);
+                if (got == 1)
+                    s_puts("[FS] selftest bigbin OK\n");
+                else
+                    s_puts("[FS] selftest bigbin MISMATCH\n");
+            } else {
+                s_puts("[FS] selftest bigbin MISSING\n");
+            }
+            if (ex_lookup("/nope-missing", &ino, &is_dir, &size) == -2)
+                s_puts("[FS] selftest enoent OK\n");
+            else
+                s_puts("[FS] selftest enoent MISMATCH\n");
+        }
     }
     /* --- M6: APs to long mode + IPI/TLB plumbing (needs IDT + MMIO) --- */
     smp_init();

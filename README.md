@@ -14,6 +14,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu gui exit`, foreground `run` with real `argc/argv`, `gui` enters the window server.
 - **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor, kernel window slots (8×, 8 MB pool) composited bottom-to-top, per-window input rings with focus routing, single-window server (`winsrv`) + separate terminal process (`term`), Start menu (launcher, task buttons, clock, reboot), QOI wallpaper + desktop icons (vendored `third_party/qoi.h`).
 - **Userspace graphics ABI** — `FB_INFO`/`FB_MAP`/`FB_UNMAP` map the display into Ring-3 (UC, single-owner, console auto-yields/restores), bump allocator over `brk`, `gfxdemo` proves direct pixels from userspace.
+- **Read-only ext2** — superblock/inode/direct+single+double maps, dir walk, hole-aware reads, boot mount + selftest, `READDIR` syscall (writes + fd table are later work).
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
 
 ## Layout
@@ -90,13 +91,14 @@ make check64            # headless + keyboard + framebuffer + mouse + gfx + win 
 | 151 | REBOOT | 8042 reset pulse, noreturn |
 | 152 | WIN_BLIT | id,x,y,w,h,ptr (w*h*4 ≤ 256KB) |
 | 153 | BLOBREAD | name,buf,max -> bytes (0 probes size) |
+| 159 | READDIR | path,buf,max -> count of {ino,type,name} |
 
 ## Known issues / future work
 
 - One intermittent wild-frame fault (~1/6 runs) under maximum migration churn; full forensics stay in-tree (`trace_cr3` ring, NMI freeze, raw serial dumps, `sched_owner_*` monitor hooks).
 - Orphan zombies accumulate until reaped (no periodic init reaper yet); `RLIMIT`-style caps absent.
 - TSC-seeded ASLR is weak entropy (a CSPRNG + `getrandom` is later work).
-- No filesystem (AHCI sector driver exists; ext2/VFS not yet ported), network, or audio yet — the 32-bit ancestor's subsystems (VFS/ext2/FAT32, RTL8139 stack, SB16, DOOM) are port candidates, not yet ported.
+- No writable filesystem (ext2 read-only; writes/VFS not yet ported), network, or audio yet — the 32-bit ancestor's subsystems (VFS/ext2-write/FAT32, RTL8139 stack, SB16, DOOM) are port candidates, not yet ported.
 - Shell has no job control, quotes, or background `&`.
 - `syscall/sysret` fast path, higher-half kernel, 5-level paging: explicitly out of scope for this bring-up.
 

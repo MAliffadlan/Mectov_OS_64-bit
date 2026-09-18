@@ -109,6 +109,7 @@ u64 k64_ticks(void);
 #define SYS64_REBOOT 151       /* D3: reset via 8042, noreturn */
 #define SYS64_WIN_BLIT 152     /* D4: RBX=id RCX=x RDX=y RSI=w RDI=h R8=ptr */
 #define SYS64_BLOBREAD 153     /* D4: RBX=name RCX=buf RDX=max -> n/-errno */
+#define SYS64_READDIR 159      /* F2a: RBX=path RCX=buf RDX=max -> count */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -231,6 +232,16 @@ long win_blit(int id, u32 x, u32 y, u32 w, u32 h, const u32 *us); /* D4 */
 /* D4 asset blobs (k64/blob64.c). */
 void blob_register(const char *name, const void *data, u64 len);
 long blob_read(const char *kname, void *dst, u64 maxlen);
+/* F2a read-only ext2 (k64/ext64.c): single volume, no VFS yet. */
+typedef struct {
+    u32 ino, type;
+    char name[64];
+} fsdirent_t;
+int ex_mounted(void);
+int ex_mount(int drive);
+int ex_lookup(const char *path, u32 *ino_out, int *is_dir, u32 *size_out);
+long ex_read_ino(u32 ino, u64 off, void *buf, u32 len);
+int ex_readdir_ino(u32 ino, u32 index, u32 *e_ino, int *e_dir, char *e_name);
 /* F1 AHCI block (k64/ahci64.c): drives AHCI64_DRIVE_BASE+n, sector API. */
 #define AHCI64_DRIVE_BASE 4
 void ahci64_init(void);
