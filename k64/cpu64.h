@@ -27,6 +27,12 @@ void s_raws(const char *s);
 void s_rawx(u64 v);
 void s_rawu(u64 v);
 
+/* VGA-1 framebuffer text console (k64/cons64.c). cons_* run lock-free
+ * internally: callers must hold serial_lock (s_putc_locked does). */
+int cons_init(u64 addr, u32 pitch, u32 w, u32 h, u32 bpp);
+int cons_live(void);
+void cons_putc(char c);
+
 /* 64-bit interrupt frame built by k64/entry64.asm isr64_common.
  * Field order MUST match the stub push order:
  *   push vec, push err, push rax..r15  ->  rdi = rsp points at r15.

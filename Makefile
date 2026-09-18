@@ -22,7 +22,8 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/k64_isr64.o $(OBJ64_DIR)/k64_mem64.o \
          $(OBJ64_DIR)/k64_task64.o $(OBJ64_DIR)/k64_syscall64.o \
          $(OBJ64_DIR)/k64_loader64.o $(OBJ64_DIR)/k64_smp64.o \
-         $(OBJ64_DIR)/k64_kbd64.o \
+         $(OBJ64_DIR)/k64_kbd64.o $(OBJ64_DIR)/k64_cons64.o \
+         $(OBJ64_DIR)/font8x16.o \
          $(OBJ64_DIR)/entry64.o $(OBJ64_DIR)/tramp64_bin.o \
          $(OBJ64_DIR)/hello64_mct.o $(OBJ64_DIR)/fpu64_mct.o \
          $(OBJ64_DIR)/clone64_mct.o $(OBJ64_DIR)/forkdemo64_mct.o \
@@ -48,6 +49,9 @@ $(OBJ64_DIR)/k64_%.o: k64/%.c k64/cpu64.h | $(OBJ64_DIR)
 
 $(OBJ64_DIR)/entry64.o: k64/entry64.asm | $(OBJ64_DIR)
 	$(AS64) $(ASFLAGS64) $< -o $@
+
+$(OBJ64_DIR)/font8x16.o: k64/font8x16.c k64/font8x16.h | $(OBJ64_DIR)
+	$(CC64) $(CFLAGS64) -c $< -o $@
 
 # --- AP trampoline: 16-bit blob loaded at 0x8000 via SIPI ---
 k64/tramp64.bin: k64/tramp64.asm
@@ -123,7 +127,7 @@ clean64:
 clean: clean64
 
 check64: iso64
-	./run64.sh --headless && python3 scripts/kbd_test.py
+	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py
 
 check: check64
 

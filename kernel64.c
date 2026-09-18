@@ -13,6 +13,13 @@
  * the same CPU can't happen (no print path re-enters). */
 static spin64_t serial_lock = SPIN64_INIT;
 
+/* VGA-1: Multiboot2 framebuffer geometry, filled during tag parsing and
+ * consumed by cons_init() after mem64_init() (the FB pages are UC-mapped
+ * by then, so the console can write immediately). Zero addr = no usable
+ * framebuffer -> serial-only fallback. */
+u64 g_fb_addr = 0;
+u32 g_fb_pitch = 0, g_fb_w = 0, g_fb_h = 0, g_fb_bpp = 0;
+
 #define MB2_BOOT_MAGIC 0x36D76289u
 
 static inline void outb(u16 port, u8 v) {
@@ -64,6 +71,12 @@ static void s_putc_locked(char c) {
     int t = 100000;
     while (!(inb(COM1 + 5) & 0x20) && t > 0) t--;
     outb(COM1, (u8)c);
+    /* Dual sink (VGA-1C): every locked serial byte also hits the screen.
+     * cons_putc is a no-op until cons_init() succeeds, and runs under the
+     * same serial_lock hold, so serial and screen stay atomically in sync
+     * across CPUs. Fatal-dump paths use s_rawc (lock-free) and bypass this
+     * on purpose. */
+    cons_putc(c);
 }
 
 void s_putc(char c) {
@@ -302,6 +315,11 @@ void kernel64_main(u64 magic, u64 mb_info) {
     s_puts(" pitch=");
     s_dec64(fb_pitch);
     s_puts("\n");
+    g_fb_addr = fb_addr;
+    g_fb_pitch = fb_pitch;
+    g_fb_w = fb_w;
+    g_fb_h = fb_h;
+    g_fb_bpp = fb_bpp;
     if (cmdline && cmdline < (const char *)(end)) {
         s_puts("[K64] cmdline=\"");
         /* Print bounded: never run past the info struct on a bad string. */
@@ -329,6 +347,14 @@ void kernel64_main(u64 magic, u64 mb_info) {
 
     /* --- M3: full physical memory + paging (needs mb_info for memmap) --- */
     mem64_init(mb_info);
+
+    /* --- VGA-1: text console on the Multiboot2 framebuffer. UC mapping
+     * already exists (mem64 pass 5); unsupported modes fall back to
+     * serial-only with a clear log line (system stays fully usable). */
+    if (cons_init(g_fb_addr, g_fb_pitch, g_fb_w, g_fb_h, g_fb_bpp))
+        s_puts("[K64] cons: framebuffer console live\n");
+    else
+        s_puts("[K64] cons: no usable framebuffer, serial only\n");
 
     /* --- M5: tasks (boot context becomes task[0] idle) + embedded image
      * registry (MCT2/ELF64, parsed by the loader at spawn/exec) --- */

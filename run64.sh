@@ -17,7 +17,7 @@ make iso64 MECTOV64_CMDLINE="${MECTOV64_CMDLINE:-}" || { echo "[-] iso64 failed"
 rm -f serial64.log
 
 QEMU_ARGS=(-machine q35 -cpu qemu64,+nx -m "$MEM" -smp "$SMP"
-    -cdrom mectov64.iso
+    -vga std -cdrom mectov64.iso
     -serial file:serial64.log
     -no-reboot)
 
