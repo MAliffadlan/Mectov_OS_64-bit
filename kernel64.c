@@ -392,6 +392,8 @@ void kernel64_main(u64 magic, u64 mb_info) {
     extern char _binary_demos_smptest64_mct_end[];
     extern char _binary_demos_mousedemo64_mct_start[];
     extern char _binary_demos_mousedemo64_mct_end[];
+    extern char _binary_demos_gfxdemo64_mct_start[];
+    extern char _binary_demos_gfxdemo64_mct_end[];
 #define REG(n_, s_)                                                     \
     exec_register(n_, _binary_demos_##s_##_start,                        \
                   (u64)(_binary_demos_##s_##_end - _binary_demos_##s_##_start))
@@ -409,6 +411,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
     REG("asldemo", asldemo64_mct);
     REG("smptest", smptest64_mct);
     REG("mousedemo", mousedemo64_mct);
+    REG("gfxdemo", gfxdemo64_mct);
 #undef REG
     task64_init();
     int dh = task64_spawn_image("hello");

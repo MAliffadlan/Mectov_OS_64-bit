@@ -209,6 +209,23 @@ void cons_dims(u32 *w, u32 *h) {
     if (h) *h = fb_h;
 }
 
+/* G2 graphics mode: while a userspace mapper owns the screen, present()
+ * is a no-op (text keeps accumulating in the backbuffer invisibly).
+ * Releasing marks everything dirty, so the next present restores the
+ * console + strip + cursor in one flush. Serial-lock discipline throughout
+ * (flag only changes under it; present() always runs under it). */
+static int gfx_on = 0;
+
+void cons_graphics(int on) {
+    if (on) {
+        gfx_on = 1;
+        return;
+    }
+    if (!gfx_on) return;
+    gfx_on = 0;
+    mark_dirty(0, fb_h);
+}
+
 /* G1 mouse cursor: 12x16 arrow, bit 11 = leftmost pixel. Composited onto
  * the DISPLAY during present() — never stored in the backbuffer, so text,
  * strip redraws and scrolls can neither corrupt nor smear it. */
@@ -238,6 +255,7 @@ void cons_present(void) {
     u32 y0, y1, mx = 0, my = 0;
     int mshow = 0;
     if (!live) return;
+    if (gfx_on) return; /* G2: mapper owns the screen; bb still updates */
     if (status_want != status_drawn) {
         status_redraw();
         status_drawn = status_want;

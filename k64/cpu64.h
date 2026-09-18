@@ -92,6 +92,9 @@ u64 k64_ticks(void);
 #define SYS64_GETCHAR 135 /* M7.2: nonblocking key, -1 if empty */
 #define SYS64_SPAWN 136   /* M7.2: RBX=name RCX=argc RDX=argv -> id */
 #define SYS64_GETMOUSE 137 /* G1: -> packed x|y<<12|btn<<24|seq<<32 */
+#define SYS64_FB_INFO 138  /* G2: RBX=ptr{fbinfo_t} -> 0/-errno */
+#define SYS64_FB_MAP 139   /* G2: map display to caller -> va/-errno */
+#define SYS64_FB_UNMAP 140 /* G2: release display map -> 0/-errno */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -102,6 +105,10 @@ typedef struct {
 typedef struct {
     u64 total_frames, free_frames;
 } meminfo_t;
+/* G2 display geometry (kernel + demos/libc, fixed sizes). */
+typedef struct {
+    u64 addr, pitch, w, h, bpp, size, map_va;
+} fbinfo_t;
 #define SYS64_PRINT 1
 #define SYS64_TICKS 8
 #define SYS64_YIELD 9
@@ -172,6 +179,14 @@ u64 mouse_get(void);     /* packed poll for SYS64_GETMOUSE */
 void mouse_cursor_state(u32 *x, u32 *y, int *shown);
 u64 s_lock_hold(void);   /* export serial_lock for IRQ multi-op paths */
 void s_lock_drop(u64 f);
+/* Multiboot2 framebuffer geometry (kernel64.c; consumed by cons/fb). */
+extern u64 g_fb_addr;
+extern u32 g_fb_pitch, g_fb_w, g_fb_h, g_fb_bpp;
+/* G2 display ownership (k64/fb64.c): single-mapper model. */
+long fb_info(fbinfo_t *out);
+long fb_map_current(void);
+long fb_unmap_current(void);
+void fb_owner_release(task64_t *t);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */

@@ -487,8 +487,16 @@ static u64 clone_level(u64 *src, int level, int cow) {
                                * RX pages stay shared-RO (refcounted): a
                                * write there must RO-kill, not privatize.
                                * Threads (cow==0) keep RW-shared mappings. */
-                u64 pa = e & PTE_ADDR;
-                if (cow && (e & PTE_US) && (e & PTE_RW)) {
+            u64 pa = e & PTE_ADDR;
+            if ((e & PTE_US) && g_fbsize && pa >= g_fb &&
+                pa < g_fb + g_fbsize) {
+                dst[i] = e; /* G2 display: always truly shared, never
+                             * COW, never refcounted (MAP_SHARED). Fork
+                             * children see the same screen; teardown
+                             * puts on ref-0 stay harmless no-ops. */
+                continue;
+            }
+            if (cow && (e & PTE_US) && (e & PTE_RW)) {
                     u64 c = (pa | PTE_P | PTE_US | PTE_COW) & ~PTE_RW;
                     if (e & PTE_NX) c |= PTE_NX;
                     src[i] = c;

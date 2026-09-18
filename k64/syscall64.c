@@ -81,6 +81,20 @@ u64 syscall64_dispatch(regs64_t *r) {
     case SYS64_GETMOUSE:
         ret = mouse_get();
         break;
+    case SYS64_FB_INFO: {
+        if (!vmm_user_ok(a, sizeof(fbinfo_t))) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)(long)fb_info((fbinfo_t *)a);
+        break;
+    }
+    case SYS64_FB_MAP:
+        ret = (u64)fb_map_current();
+        break;
+    case SYS64_FB_UNMAP:
+        ret = (u64)(long)fb_unmap_current();
+        break;
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

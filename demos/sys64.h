@@ -95,6 +95,13 @@ static inline long d_ps(ps_entry_t *b, long max) {
 }
 static inline long d_getchar(void) { return sys0(135); }
 static inline long d_getmouse(void) { return sys0(137); }
+/* G2 display (mirror k64/cpu64.h layouts/numbers). */
+typedef struct {
+    u64 addr, pitch, w, h, bpp, size, map_va;
+} fbinfo_t;
+static inline long d_fbinfo(fbinfo_t *f) { return sys1(138, (u64)f); }
+static inline long d_fbmap(void) { return sys0(139); }
+static inline long d_fbunmap(void) { return sys0(140); }
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

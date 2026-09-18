@@ -13,6 +13,7 @@ This is the 64-bit successor project, developed on its own branch history here. 
 - **Demand paging** — `brk()` heap grows the pointer; pages materialize zero-filled on first touch, with guard-hole and canonical-address enforcement.
 - **Ring-3 shell** — `mct>` prompt over PS/2 keyboard: `help ps run exec ticks mem echo sleep cpu exit`, foreground `run` with real `argc/argv`.
 - **Framebuffer console + 2D** — 1024×768×32 text console on a 4 MB backbuffer (dirty-row present), persistent status strip (G0 tag, RGB bars, tick progress), `pixel/fill/blit` primitives, PS/2 mouse with composited cursor; no window manager yet.
+- **Userspace graphics ABI** — `FB_INFO`/`FB_MAP`/`FB_UNMAP` map the display into Ring-3 (UC, single-owner, console auto-yields/restores), bump allocator over `brk`, `gfxdemo` proves direct pixels from userspace.
 - **Syscall ABI** — `int $0x80` (kept deliberately for bring-up; `syscall/sysret` is future work), validated user pointers, per-syscall errno returns.
 
 ## Layout
@@ -25,9 +26,9 @@ run64.sh       QEMU launcher (q35, 4 cores, serial log, headless gate)
 k64/           Kernel: gdt/idt/isr, mem/paging, tasks/sched, syscalls,
                MCT2+ELF64 loader, SMP/LAPIC, PS/2 keyboard, spinlocks
 demos/         Ring-3 programs (MCT2, one ELF64): shell, hello, fpu,
-                clone/fork/exec demos, brk/nx/aslr/smp/meminfo/mouse tests
+                clone/fork/exec demos, brk/nx/aslr/smp/meminfo/mouse/gfx tests
 scripts/       build_mct64.py, build_elf64.py, qmp.py, kbd_test.py,
-               vga_test.py, mouse_test.py, stress.py
+               vga_test.py, mouse_test.py, gfx_test.py, stress.py
 ```
 
 ## Build, run, test
@@ -69,6 +70,9 @@ make check64            # headless gate + keyboard gate + framebuffer gate
 | 135 | GETCHAR | nonblocking key, -1 if empty |
 | 136 | SPAWN | name, argc, argv |
 | 137 | GETMOUSE | -> packed x\|y<<12\|btn<<24\|seq<<32 |
+| 138 | FB_INFO | ptr{addr,pitch,w,h,bpp,size,map_va} |
+| 139 | FB_MAP | map display to caller -> va (single owner) |
+| 140 | FB_UNMAP | release map, restore console |
 
 ## Known issues / future work
 
