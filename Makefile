@@ -25,7 +25,7 @@ OBJS64 = $(OBJ64_DIR)/boot64.o $(OBJ64_DIR)/kernel64.o \
          $(OBJ64_DIR)/k64_kbd64.o $(OBJ64_DIR)/k64_cons64.o \
          $(OBJ64_DIR)/k64_mouse64.o $(OBJ64_DIR)/k64_fb64.o \
          $(OBJ64_DIR)/k64_win64.o $(OBJ64_DIR)/k64_blob64.o \
-         $(OBJ64_DIR)/font8x16.o \
+         $(OBJ64_DIR)/k64_ahci64.o $(OBJ64_DIR)/font8x16.o \
          $(OBJ64_DIR)/entry64.o $(OBJ64_DIR)/tramp64_bin.o \
          $(OBJ64_DIR)/hello64_mct.o $(OBJ64_DIR)/fpu64_mct.o \
          $(OBJ64_DIR)/clone64_mct.o $(OBJ64_DIR)/forkdemo64_mct.o \
@@ -156,7 +156,7 @@ clean64:
 clean: clean64
 
 check64: iso64
-	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py && python3 scripts/mouse_test.py && python3 scripts/gfx_test.py && python3 scripts/win_test.py && python3 scripts/gui_test.py
+	./run64.sh --headless && python3 scripts/kbd_test.py && python3 scripts/vga_test.py && python3 scripts/mouse_test.py && python3 scripts/gfx_test.py && python3 scripts/win_test.py && python3 scripts/gui_test.py && python3 scripts/blk_test.py
 
 check: check64
 

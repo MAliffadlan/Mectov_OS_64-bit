@@ -567,6 +567,19 @@ void kernel64_main(u64 magic, u64 mb_info) {
     pit_init_hz(100);
     kbd_init(); /* drain stale PS/2 bytes; IRQ1 unmasked in the PIC above */
     mouse_init(); /* G1: PS/2 aux init; safe no-op line when absent */
+    ahci64_init(); /* F1: SATA disks (needs mem64 MMIO window only) */
+    if (ahci64_present()) {
+        /* F1 read-only proof: LBA0 of the first drive (+MBR signature). */
+        static u8 probe[1024];
+        int rc = ahci64_read(AHCI64_DRIVE_BASE, 0, 2, probe);
+        s_puts("[AHCI] selftest read LBA0-1 rc=");
+        s_dec64((u64)(long)rc);
+        if (rc == 0) {
+            s_puts(" mbr=");
+            s_hex64((u64)probe[510] | ((u64)probe[511] << 8));
+        }
+        s_puts("\n");
+    }
     /* --- M6: APs to long mode + IPI/TLB plumbing (needs IDT + MMIO) --- */
     smp_init();
     int smp_ok = smp_selftest();

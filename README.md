@@ -24,13 +24,14 @@ kernel64.c     kernel_main: init order, boot banner, idle loop
 linker64.ld    ELF64 link script (kernel at 1 MiB)
 run64.sh       QEMU launcher (q35, 4 cores, serial log, headless gate)
 k64/           Kernel: gdt/idt/isr, mem/paging, tasks/sched, syscalls,
-               MCT2+ELF64 loader, SMP/LAPIC, PS/2 keyboard, spinlocks
+               MCT2+ELF64 loader, SMP/LAPIC, PS/2 keyboard, spinlocks,
+               AHCI block driver (sector read/write, no FS yet)
 demos/         Ring-3 programs (MCT2, one ELF64): shell, hello, fpu,
                 clone/fork/exec demos, brk/nx/aslr/smp/meminfo/mouse/gfx tests,
                 winsrv (single-window GUI server), term (GUI terminal)
 scripts/       build_mct64.py, build_elf64.py, qmp.py, kbd_test.py,
                vga_test.py, mouse_test.py, gfx_test.py, win_test.py,
-               gui_test.py, mkassets.py, stress.py
+               gui_test.py, mkassets.py, blk_test.py, stress.py
 third_party/   vendored MIT code: qoi.h image codec (desktop wallpaper)
 ```
 
@@ -95,7 +96,7 @@ make check64            # headless + keyboard + framebuffer + mouse + gfx + win 
 - One intermittent wild-frame fault (~1/6 runs) under maximum migration churn; full forensics stay in-tree (`trace_cr3` ring, NMI freeze, raw serial dumps, `sched_owner_*` monitor hooks).
 - Orphan zombies accumulate until reaped (no periodic init reaper yet); `RLIMIT`-style caps absent.
 - TSC-seeded ASLR is weak entropy (a CSPRNG + `getrandom` is later work).
-- No filesystem, network, audio, or GUI yet — the 32-bit ancestor's subsystems (VFS/ext2/FAT32, RTL8139 stack, SB16, window manager, DOOM) are port candidates, not yet ported.
+- No filesystem (AHCI sector driver exists; ext2/VFS not yet ported), network, or audio yet — the 32-bit ancestor's subsystems (VFS/ext2/FAT32, RTL8139 stack, SB16, DOOM) are port candidates, not yet ported.
 - Shell has no job control, quotes, or background `&`.
 - `syscall/sysret` fast path, higher-half kernel, 5-level paging: explicitly out of scope for this bring-up.
 

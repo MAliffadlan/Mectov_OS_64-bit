@@ -231,6 +231,13 @@ long win_blit(int id, u32 x, u32 y, u32 w, u32 h, const u32 *us); /* D4 */
 /* D4 asset blobs (k64/blob64.c). */
 void blob_register(const char *name, const void *data, u64 len);
 long blob_read(const char *kname, void *dst, u64 maxlen);
+/* F1 AHCI block (k64/ahci64.c): drives AHCI64_DRIVE_BASE+n, sector API. */
+#define AHCI64_DRIVE_BASE 4
+void ahci64_init(void);
+int ahci64_present(void);
+int ahci64_drive_count(void);
+int ahci64_read(int drive, u32 lba, int count, u8 *buf);
+int ahci64_write(int drive, u32 lba, int count, const u8 *buf);
 int task64_spawn_args(const char *kname, int argc, char **kargv);
 int task64_ps(ps_entry_t *out, int max);
 u64 task64_exec(const char *uname, regs64_t *r); /* user-space name pointer */
