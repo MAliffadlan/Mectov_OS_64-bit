@@ -48,6 +48,33 @@ static void cmd_mem(void) {
     dl_nl(&l);
 }
 
+static void cmd_cat(const char *path) {
+    long fd = d_open(path, O_RDONLY);
+    DLINE(l);
+    long total = 0;
+    if (fd < 0) {
+        dl_s(&l, "cat failed ");
+        dl_u(&l, (u64)(-fd));
+        dl_nl(&l);
+        return;
+    }
+    for (int i = 0; i < 64; i++) {
+        static char buf[1024];
+        long r = d_read(fd, buf, 1024);
+        if (r < 0) {
+            dl_s(&l, "cat read failed ");
+            dl_u(&l, (u64)(-r));
+            dl_nl(&l);
+            break;
+        }
+        if (!r) break;
+        sys2(1, (u64)buf, (u64)r);
+        total += r;
+    }
+    d_close(fd);
+    (void)total;
+}
+
 static void cmd_run(char **av, int ac) {
     if (ac < 1) { put("usage: run <name> [args...]"); return; }
     /* Unix-style: argv[0] is the command name itself. */
@@ -122,7 +149,7 @@ static void shell_loop(void) {
         if (ac == 0) continue;
         if (!s_cmp(av[0], "exit")) return;
         if (!s_cmp(av[0], "help")) {
-            put("help ps run exec ticks mem echo sleep cpu gui exit");
+            put("help ps run exec ticks mem echo sleep cpu gui cat exit");
             continue;
         }
         if (!s_cmp(av[0], "ps")) { cmd_ps(); continue; }
@@ -160,6 +187,11 @@ static void shell_loop(void) {
             continue;
         }
         if (!s_cmp(av[0], "run")) { cmd_run(av + 1, ac - 1); continue; }
+        if (!s_cmp(av[0], "cat")) {
+            if (ac < 2) { put("usage: cat <path>"); continue; }
+            cmd_cat(av[1]);
+            continue;
+        }
         if (!s_cmp(av[0], "gui")) {
             /* G4: foreground window server; its `exit` returns here. */
             char *gav[2] = { "winsrv", 0 };

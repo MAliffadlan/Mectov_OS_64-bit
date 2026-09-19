@@ -104,6 +104,7 @@ static task64_t *alloc_slot(const char *name) {
             tasks[i].heap_base = 0;
             tasks[i].heap_brk = 0;
             namecpy(tasks[i].name, name);
+            for (int k = 0; k < 16; k++) tasks[i].fd_table[k] = -1;
             fx_init(&tasks[i]);
             t = &tasks[i];
             break;
@@ -182,9 +183,10 @@ void task64_init(void) {
         tasks[i].wakeup_tick = 0;
         tasks[i].exit_code = 0;
         tasks[i].last_cpu = -1;
-        tasks[i].heap_base = 0;
-        tasks[i].heap_brk = 0;
-        tasks[i].name[0] = '\0';
+            tasks[i].heap_base = 0;
+            tasks[i].heap_brk = 0;
+            tasks[i].name[0] = '\0';
+            for (int k = 0; k < 16; k++) tasks[i].fd_table[k] = -1;
     }
     for (int i = 0; i < NCPU_MAX; i++) cur_cpu[i] = 0;
     /* task[0] = boot context: runs on the boot stack, rsp captured at the
@@ -449,6 +451,7 @@ int task64_clone(u64 func) {
     t->user_base = self->user_base;
     t->heap_base = self->heap_base;
     t->heap_brk = self->heap_brk;
+    fd_inherit(t, self); /* F2b: copied table, bumped refs (both kinds) */
     u64 csp = ustack_top(t->id) - 8;
     u64 old = cr3_swap(child_pml4);
     *(volatile u64 *)csp = self->user_base + DEMO_THREAD_EXIT_OFF;
@@ -465,6 +468,7 @@ void task64_exit(int status) {
     }
     fb_owner_release(self); /* G2: yield the screen before going zombie */
     win_owner_release(self); /* D1: close owned window slots */
+    fd_close_all(self); /* F2b: release open files */
     s_printf("[K64] task %u (%s) exited status=%u\n", (u64)self->id,
              self->name, (u64)(long)status);
     u64 f = SCHED_LOCK();
@@ -759,6 +763,7 @@ int task64_fork(regs64_t *r) {
     t->user_base = self->user_base;
     t->heap_base = self->heap_base;
     t->heap_brk = self->heap_brk;
+    fd_inherit(t, self); /* F2b: shared offsets, bumped refs */
     /* Kernel stack copy (both sides identity-mapped). The live stack is the
      * 16KB BELOW kstack_top — copying [top, top+16K) instead duplicates the
      * neighbor slot and leaves the child frame zeroed (iretq to CS:RIP=0). */

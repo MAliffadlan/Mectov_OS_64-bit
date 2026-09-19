@@ -204,6 +204,25 @@ typedef struct {
 static inline long d_readdir(const char *path, fsdirent_t *buf, long max) {
     return sys3(159, (u64)path, (u64)buf, (u64)max);
 }
+/* F2b file descriptors (mirror k64/cpu64.h numbers). */
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR 2
+#define O_CREAT 0x40
+#define O_TRUNC 0x200
+static inline long d_open(const char *path, long flags) {
+    return sys2(154, (u64)path, (u64)flags);
+}
+static inline long d_read(long fd, void *buf, u64 len) {
+    return sys3(155, (u64)fd, (u64)buf, len);
+}
+static inline long d_write(long fd, const void *buf, u64 len) {
+    return sys3(156, (u64)fd, (u64)buf, len);
+}
+static inline long d_close(long fd) { return sys1(157, (u64)fd); }
+static inline long d_lseek(long fd, u64 off, long whence) {
+    return sys3(158, (u64)fd, off, (u64)whence);
+}
 static inline long d_spawn(const char *n, long argc, const char **argv) {
     return sys3(136, (u64)n, (u64)argc, (u64)argv);
 }

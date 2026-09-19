@@ -110,6 +110,11 @@ u64 k64_ticks(void);
 #define SYS64_WIN_BLIT 152     /* D4: RBX=id RCX=x RDX=y RSI=w RDI=h R8=ptr */
 #define SYS64_BLOBREAD 153     /* D4: RBX=name RCX=buf RDX=max -> n/-errno */
 #define SYS64_READDIR 159      /* F2a: RBX=path RCX=buf RDX=max -> count */
+#define SYS64_OPEN 154         /* F2b: RBX=path RCX=flags -> fd/-errno */
+#define SYS64_READ 155         /* F2b: RBX=fd RCX=buf RDX=len -> n/-errno */
+#define SYS64_WRITE 156        /* F2b: RBX=fd RCX=buf RDX=len -> n/-errno */
+#define SYS64_CLOSE 157        /* F2b: RBX=fd -> 0/-errno */
+#define SYS64_LSEEK 158        /* F2b: RBX=fd RCX=off RDX=whence -> pos */
 #define SYS64_BRK 120     /* M7.3: RBX=new_brk (0 = query) -> brk */
 
 /* ps/meminfo shared layouts (kernel + demos/libc, fixed sizes). */
@@ -175,6 +180,7 @@ typedef struct task64 {
     u64 heap_base;    /* M7.3: demand-heap [base, brk) */
     u64 heap_brk;
     char name[16];
+    int fd_table[16]; /* F2b: per-task fds (global indices, -1 free) */
     u8 fx[512] __attribute__((aligned(16))); /* eager FPU image */
 } task64_t;
 
@@ -204,6 +210,8 @@ u64 mouse_get(void);     /* packed poll for SYS64_GETMOUSE */
 void mouse_cursor_state(u32 *x, u32 *y, int *shown);
 u64 s_lock_hold(void);   /* export serial_lock for IRQ multi-op paths */
 void s_lock_drop(u64 f);
+void s_puts_locked(const char *s); /* no lock taken (caller holds it) */
+void s_dec64_locked(u64 v);
 /* Multiboot2 framebuffer geometry (kernel64.c; consumed by cons/fb). */
 extern u64 g_fb_addr;
 extern u32 g_fb_pitch, g_fb_w, g_fb_h, g_fb_bpp;
@@ -242,6 +250,24 @@ int ex_mount(int drive);
 int ex_lookup(const char *path, u32 *ino_out, int *is_dir, u32 *size_out);
 long ex_read_ino(u32 ino, u64 off, void *buf, u32 len);
 int ex_readdir_ino(u32 ino, u32 index, u32 *e_ino, int *e_dir, char *e_name);
+/* F2b write side (direct + single-indirect scope). */
+int ex_create(u32 dir_ino, const char *name, u32 *ino_out);
+int ex_truncate(u32 ino, u32 size);
+long ex_write_data(u32 ino, u64 off, const void *buf, u32 len);
+int ex_fsize(u32 ino, u32 *size_out);
+/* F2b descriptors (k64/fd64.c). O_* match Linux numbers. */
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR 2
+#define O_CREAT 0x40
+#define O_TRUNC 0x200
+int fd_open(const char *path, int flags);
+long fd_read(int fd, void *buf, u64 len);
+long fd_write(int fd, const void *buf, u64 len);
+long fd_close(int fd);
+long fd_lseek(int fd, u64 off, int whence);
+void fd_close_all(task64_t *t);
+void fd_inherit(task64_t *dst, task64_t *src);
 /* F1 AHCI block (k64/ahci64.c): drives AHCI64_DRIVE_BASE+n, sector API. */
 #define AHCI64_DRIVE_BASE 4
 void ahci64_init(void);

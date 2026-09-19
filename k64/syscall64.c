@@ -239,6 +239,41 @@ u64 syscall64_dispatch(regs64_t *r) {
         }
         break;
     }
+    case SYS64_OPEN: {
+        /* F2b: a = path (NUL <= 255), b = flags. */
+        char kpath[256];
+        int i;
+        for (i = 0; i < 255; i++) {
+            kpath[i] = ((volatile const char *)a)[i];
+            if (!kpath[i]) break;
+        }
+        if (i == 255) { ret = (u64)(long)-22; break; }
+        kpath[255] = '\0';
+        ret = (u64)(long)fd_open(kpath, (int)b);
+        break;
+    }
+    case SYS64_READ: {
+        if (!c || c > (1ULL << 20) || !vmm_user_ok(b, c)) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)fd_read((int)a, (void *)b, c);
+        break;
+    }
+    case SYS64_WRITE: {
+        if (!c || c > (1ULL << 20) || !vmm_user_ok(b, c)) {
+            ret = (u64)(long)-14;
+            break;
+        }
+        ret = (u64)fd_write((int)a, (const void *)b, c);
+        break;
+    }
+    case SYS64_CLOSE:
+        ret = (u64)(long)fd_close((int)a);
+        break;
+    case SYS64_LSEEK:
+        ret = (u64)fd_lseek((int)a, b, (int)c);
+        break;
     case SYS64_SPAWN: {
         /* a = name, b = argc, c = argv (all user). Bounded kernel copies. */
         int argc = (int)b;

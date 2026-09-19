@@ -255,6 +255,15 @@ static void perf_dec64_locked(u64 v) {
     }
     while (n > 0) s_putc_locked(buf[--n]);
 }
+/* Lock-free prints for lock-held contexts (nesting s_puts would
+ * self-deadlock the non-recursive serial_lock). */
+void s_puts_locked(const char *s) {
+    for (; *s; s++) {
+        if (*s == '\n') s_putc_locked('\r');
+        s_putc_locked(*s);
+    }
+}
+void s_dec64_locked(u64 v) { perf_dec64_locked(v); }
 static void perf_mark(const char *tag, u64 t0) {
     u32 lo, hi;
     u64 f = s_lock_hold();
@@ -488,6 +497,8 @@ void kernel64_main(u64 magic, u64 mb_info) {
     extern char _binary_demos_term64_mct_end[];
     extern char _binary_demos_fsdemo64_mct_start[];
     extern char _binary_demos_fsdemo64_mct_end[];
+    extern char _binary_demos_fswrite64_mct_start[];
+    extern char _binary_demos_fswrite64_mct_end[];
 #define REG(n_, s_)                                                     \
     exec_register(n_, _binary_demos_##s_##_start,                        \
                   (u64)(_binary_demos_##s_##_end - _binary_demos_##s_##_start))
@@ -509,6 +520,7 @@ void kernel64_main(u64 magic, u64 mb_info) {
     REG("winsrv", winsrv64_mct);
     REG("term", term64_mct);
     REG("fsdemo", fsdemo64_mct);
+    REG("fswrite", fswrite64_mct);
 #undef REG
     /* D4 desktop assets (raw QOI via objcopy, read-only data blobs). */
     {
@@ -552,8 +564,10 @@ void kernel64_main(u64 magic, u64 mb_info) {
     int das = task64_spawn_image("asldemo");
     int dsm = task64_spawn_image("smptest");
     int dfs = task64_spawn_image("fsdemo");
+    int dfw = task64_spawn_image("fswrite");
     if (dh < 0 || df < 0 || dc < 0 || dfk < 0 || de < 0 || dsh < 0 ||
-        dst < 0 || dbr < 0 || dnx < 0 || das < 0 || dsm < 0 || dfs < 0) {
+        dst < 0 || dbr < 0 || dnx < 0 || das < 0 || dsm < 0 || dfs < 0 ||
+        dfw < 0) {
         s_puts("[K64] FAIL: demo spawn broke\n");
         for (;;) __asm__ __volatile__("cli; hlt");
     }
@@ -608,8 +622,20 @@ void kernel64_main(u64 magic, u64 mb_info) {
             }
             if (ex_lookup("/big.bin", &ino, &is_dir, &size) == 0 &&
                 !is_dir && size == 40960) {
-                got = ex_read_ino(ino, 40959, fsb, 1);
-                if (got == 1)
+                int ok = 0;
+                got = ex_read_ino(ino, 0, fsb, 16);
+                if (got == 16) {
+                    /* mkfsdisk pattern byte[i] = (i*2654435761) & 0xFF. */
+                    u64 i;
+                    ok = 1;
+                    for (i = 0; i < 16; i++) {
+                        if (fsb[i] != (u8)((i * 2654435761ULL) & 0xFF)) {
+                            ok = 0;
+                            break;
+                        }
+                    }
+                }
+                if (ok)
                     s_puts("[FS] selftest bigbin OK\n");
                 else
                     s_puts("[FS] selftest bigbin MISMATCH\n");
